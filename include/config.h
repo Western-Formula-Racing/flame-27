@@ -1,0 +1,8 @@
+#pragma once
+
+#define GLOBAL_LOG_LEVEL ESP_LOG_DEBUG
+
+#define MOSI_NUM GPIO_NUM_15
+#define MISO_NUM GPIO_NUM_16
+#define SPICLK_NUM GPIO_NUM_17
+#define ISOSPI_CS GPIO_NUM_3

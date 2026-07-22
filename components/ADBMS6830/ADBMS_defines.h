@@ -1,0 +1,36 @@
+//command definitions
+
+#define  WRCFGA 0b00000000001
+#define  WRCFGB 0b00000100100
+#define  RDCFGA 0b00000000010
+#define  RDCFGB 0b00000100110
+#define  RDSID  0b00000101100
+#define  RDCVA  0b00000000100
+#define  RDCVB  0b00000000110
+#define  RDCVC  0b00000001000
+#define  RDCVD  0b00000001010
+#define  RDCVE  0b00000001001
+#define  RDCVF  0b00000001011
+#define  RDACA  0b00001000100
+#define  RDACB  0b00001000110
+#define  RDACC  0b00001001000
+#define  RDACD  0b00001001010
+#define  RDACE  0b00001001001
+#define  RDACF  0b00001001011
+#define  RDFCA  0b00000010010
+#define  RDFCB  0b00000010011
+#define  RDFCC  0b00000010100
+#define  RDFCD  0b00000010101
+#define  RDFCE  0b00000010110
+#define  RDFCF  0b00000010111
+#define  ADCV(RD, CONT, DCP, RSTF, OW) 0b01001100000 | (RD << 8) | (CONT << 7) | (DCP << 4) | (RSTF<<2) | OW
+
+// From Table 21 of datasheet
+#define IIR_FILTER_DISABLED 0
+#define IIR_FILTER_110HZ    1
+#define IIR_FILTER_45HZ     2
+#define IIR_FILTER_21HZ     3
+#define IIR_FILTER_10HZ     4
+#define IIR_FILTER_5HZ      5
+#define IIR_FILTER_1_25HZ   6
+#define IIR_FILTER_0_625HZ  7
