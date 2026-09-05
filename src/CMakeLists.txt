@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16.0)
 
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-include_directories("${CMAKE_SOURCE_DIR}/include")
-project(flame-27)
+idf_component_register( SRCS "main.c" 
+                        INCLUDE_DIRS "." "../components" "../include" 
+                        REQUIRES "isospi" "ADBMS6830" esp_driver_spi esp_driver_gpio measuretask statetask)

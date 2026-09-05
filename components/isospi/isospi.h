@@ -1,5 +1,6 @@
 #pragma once
 #include "driver/spi_master.h"
+
 extern spi_device_handle_t spi_cs1, spi_cs2;
 
 void SPI_Setup();

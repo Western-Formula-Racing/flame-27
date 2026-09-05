@@ -1,10 +1,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 #include "config.h"
 #include "isospi.h"
 #include "esp_log.h"
-
+#include "driver/gpio.h"
 
 static const char* TAG = "isospi"; 
 
@@ -25,7 +24,7 @@ void SPI_Setup(){
     .data7_io_num = -1,
     .max_transfer_sz = 4096,
     .flags = 0,
-    .isr_cpu_id = INTR_CPU_ID_AUTO,
+    .isr_cpu_id = ESP_INTR_CPU_AFFINITY_AUTO,
     .intr_flags = 0,
   };
 
@@ -35,7 +34,7 @@ void SPI_Setup(){
   spi_device_interface_config_t devcfg_cs1 = { 
     .mode = 3,
     .clock_speed_hz = 1 * 1000 * 100, // 500KHz
-    .spics_io_num = CS_NUM,
+    .spics_io_num = ISOSPI_CS,
     .flags = 0,
     .queue_size = 7,
   };

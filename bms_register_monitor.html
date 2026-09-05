@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BMS Register Monitor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg:#10141a;
+  --panel:#161b23;
+  --panel-alt:#1c2330;
+  --border:#2a3242;
+  --amber:#ffb238;
+  --amber-dim:#7a5a26;
+  --text:#c9d3e0;
+  --text-dim:#5c6779;
+  --ok:#57d9a3;
+  --warn:#ffb238;
+  --err:#ff6b6b;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size:13px;
+  padding:20px;
+}
+
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:12px;
+  border:1px solid var(--border);
+  background:var(--panel);
+  padding:14px 18px;
+  border-radius:6px;
+  margin-bottom:16px;
+}
+.title{
+  font-size:15px;
+  font-weight:700;
+  letter-spacing:1.5px;
+  color:var(--amber);
+  text-shadow:0 0 8px rgba(255,178,56,0.25);
+}
+.subtitle{
+  font-size:10px;
+  color:var(--text-dim);
+  letter-spacing:1px;
+  margin-top:2px;
+}
+.controls{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+select, button{
+  font-family:inherit;
+  font-size:12px;
+  background:var(--panel-alt);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-radius:4px;
+  padding:7px 12px;
+  cursor:pointer;
+}
+button:hover{ border-color:var(--amber-dim); }
+button.primary{ color:var(--bg); background:var(--amber); border-color:var(--amber); font-weight:700; }
+button.primary:hover{ filter:brightness(1.08); }
+button.danger{ color:var(--err); }
+button:disabled{ opacity:0.4; cursor:not-allowed; }
+
+.status{
+  display:flex; align-items:center; gap:7px;
+  font-size:11px; letter-spacing:0.5px; color:var(--text-dim);
+}
+.dot{
+  width:9px; height:9px; border-radius:50%;
+  background:var(--text-dim);
+  box-shadow:0 0 0 rgba(0,0,0,0);
+  transition:background .2s, box-shadow .2s;
+}
+.dot.connected{ background:var(--ok); box-shadow:0 0 6px var(--ok); }
+.dot.idle{ background:var(--warn); box-shadow:0 0 6px var(--warn); }
+
+.banner{
+  border:1px solid var(--border);
+  background:var(--panel-alt);
+  color:var(--text-dim);
+  font-size:11px;
+  padding:9px 14px;
+  border-radius:6px;
+  margin-bottom:16px;
+  line-height:1.5;
+}
+.banner b{ color:var(--amber); }
+
+.legend{
+  display:flex; gap:16px; align-items:center;
+  font-size:10px; color:var(--text-dim);
+  margin-bottom:10px; letter-spacing:0.5px;
+}
+.legend .dot{ width:7px; height:7px; }
+
+table{ width:100%; border-collapse:collapse; }
+.group-row td{
+  padding:10px 10px;
+  font-size:10px;
+  letter-spacing:1.5px;
+  color:var(--amber);
+  border-bottom:1px solid var(--border);
+  text-transform:uppercase;
+  cursor:pointer;
+  user-select:none;
+}
+.group-row:hover td{ background:rgba(255,178,56,0.05); }
+.group-row .chevron{
+  display:inline-block;
+  margin-right:8px;
+  transition:transform .15s ease;
+  color:var(--text-dim);
+}
+.group-body.collapsed .chevron{ transform:rotate(-90deg); }
+.group-body.collapsed tr:not(.group-row){ display:none; }
+.group-row .count{
+  color:var(--text-dim);
+  font-weight:400;
+  letter-spacing:0.5px;
+  text-transform:none;
+  margin-left:8px;
+}
+.head-row td{
+  font-size:10px;
+  color:var(--text-dim);
+  padding:0 10px 4px 10px;
+  letter-spacing:1px;
+}
+tr.reg-row{
+  border-bottom:1px solid rgba(42,50,66,0.5);
+}
+tr.reg-row:hover{ background:rgba(255,178,56,0.04); }
+
+tr.processed-row td{
+  padding:8px 10px 12px 10px;
+  border-bottom:1px solid var(--border);
+  background:rgba(79,209,197,0.03);
+}
+.processed-content{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 10px;
+}
+.processed-content .placeholder{
+  color:var(--text-dim);
+  font-size:11px;
+}
+.chip{
+  font-size:11px;
+  color:var(--ok);
+  background:rgba(87,217,163,0.08);
+  border:1px solid rgba(87,217,163,0.25);
+  border-radius:3px;
+  padding:2px 7px;
+  white-space:nowrap;
+}
+.chip.empty{
+  color:var(--text-dim);
+  background:transparent;
+  border-color:var(--border);
+}
+.chip.tag{
+  color:var(--amber);
+  background:rgba(255,178,56,0.08);
+  border-color:rgba(255,178,56,0.3);
+  font-weight:700;
+}
+
+td.name-cell{
+  padding:6px 10px;
+  white-space:nowrap;
+  font-weight:600;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+td.byte-cell{
+  padding:6px 4px;
+  text-align:center;
+  color:var(--amber);
+  font-variant-numeric:tabular-nums;
+  width:44px;
+}
+td.byte-cell.empty{ color:var(--text-dim); }
+td.byte-cell.flash{
+  background:rgba(255,178,56,0.22);
+  border-radius:3px;
+}
+
+.wrap{
+  border:1px solid var(--border);
+  background:var(--panel);
+  border-radius:6px;
+  padding:6px 4px;
+  max-height:65vh;
+  overflow-y:auto;
+}
+
+.footer{
+  display:flex; justify-content:space-between; align-items:flex-start;
+  gap:16px; margin-top:16px; flex-wrap:wrap;
+}
+.log-panel{
+  flex:1;
+  min-width:280px;
+  border:1px solid var(--border);
+  background:var(--panel);
+  border-radius:6px;
+  padding:10px 12px;
+  font-size:10.5px;
+  color:var(--text-dim);
+  max-height:120px;
+  overflow-y:auto;
+}
+.log-panel div{ white-space:pre-wrap; word-break:break-all; margin-bottom:2px; }
+.log-title{ font-size:10px; color:var(--text-dim); letter-spacing:1px; margin-bottom:6px; }
+
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="title">BMS REGISTER MONITOR</div>
+    <div class="subtitle">ADBMS DEBUG READOUT · BMSRegisters_t</div>
+  </div>
+  <div class="controls">
+    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">DISCONNECTED</span></div>
+    <select id="baudSelect">
+      <option value="9600">9600</option>
+      <option value="19200">19200</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+    </select>
+    <button class="primary" id="connectBtn">Connect</button>
+    <button id="simBtn">Simulate</button>
+    <button id="clearBtn">Clear</button>
+    <button id="downloadBtn">Download Log</button>
+  </div>
+</div>
+
+<div class="banner" id="supportBanner"></div>
+
+<div class="legend">
+  <span><span class="dot connected" style="display:inline-block;"></span> updated &lt;1s ago</span>
+  <span><span class="dot idle" style="display:inline-block;"></span> updated &lt;3s ago</span>
+  <span><span class="dot" style="display:inline-block;"></span> no recent update</span>
+  <span style="margin-left:auto; opacity:0.8;">click a group header to collapse/expand</span>
+</div>
+
+<div class="wrap">
+  <table id="regTable"></table>
+</div>
+
+<div class="footer">
+  <div class="log-panel" id="logPanel">
+    <div class="log-title">RAW SERIAL LOG (last 8 lines)</div>
+  </div>
+</div>
+
+<script>
+// ---- Register map, in struct order, tagged by functional group ----
+const REGISTERS = [
+  ['SIDR','Serial ID'],
+  ['CFGAR','Configuration'], ['CFGBR','Configuration'],
+  ['CVAR','Cell Voltage — CV'], ['CVBR','Cell Voltage — CV'], ['CVCR','Cell Voltage — CV'],
+  ['CVDR','Cell Voltage — CV'], ['CVER','Cell Voltage — CV'], ['CVFR','Cell Voltage — CV'],
+  ['ACVAR','Averaged Cell Voltage — ACV'], ['ACVBR','Averaged Cell Voltage — ACV'], ['ACVCR','Averaged Cell Voltage — ACV'],
+  ['ACVDR','Averaged Cell Voltage — ACV'], ['ACVER','Averaged Cell Voltage — ACV'], ['ACVFR','Averaged Cell Voltage — ACV'],
+  ['FCVAR','Filtered Cell Voltage — FCV'], ['FCVBR','Filtered Cell Voltage — FCV'], ['FCVCR','Filtered Cell Voltage — FCV'],
+  ['FCVDR','Filtered Cell Voltage — FCV'], ['FCVER','Filtered Cell Voltage — FCV'], ['FCVFR','Filtered Cell Voltage — FCV'],
+  ['SVAR','Redundant Cell Voltage — SV'], ['SVBR','Redundant Cell Voltage — SV'], ['SVCR','Redundant Cell Voltage — SV'],
+  ['SVDR','Redundant Cell Voltage — SV'], ['SVER','Redundant Cell Voltage — SV'], ['SVFR','Redundant Cell Voltage — SV'],
+  ['GPAR','GPIO / Aux — GP'], ['GPBR','GPIO / Aux — GP'], ['GPCR','GPIO / Aux — GP'], ['GPDR','GPIO / Aux — GP'],
+  ['RGPAR','Redundant GPIO — RGP'], ['RGPBR','Redundant GPIO — RGP'], ['RGPCR','Redundant GPIO — RGP'], ['RGPDR','Redundant GPIO — RGP'],
+  ['STAR','Status — ST'], ['STBR','Status — ST'], ['STCR','Status — ST'], ['STDR','Status — ST'], ['STER','Status — ST'],
+  ['COMM','Communication'],
+  ['PWMR','PWM'],
+  ['PSR','Pin Status'],
+  ['CMCF','Command / Clear'], ['CMTC','Command / Clear'], ['CMTG','Command / Clear'], ['CMF','Command / Clear'],
+  ['RRR','Redundant Reference'],
+];
+
+const regState = {}; // name -> {bytes:[6], lastUpdate:0}
+REGISTERS.forEach(([name]) => { regState[name] = { bytes: new Array(6).fill(null), lastUpdate: 0 }; });
+
+function slugify(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ---- Group definitions, derived from REGISTERS order ----
+// Groups whose registers hold little-endian 16-bit ADC codes for cell/aux
+// voltages get the "voltage" processor; everything else gets a generic
+// raw-code processor. Add new group ids here (or new processor functions
+// below) to extend what "processed values" shows for a given group.
+const VOLTAGE_GROUP_IDS = new Set([
+  'cell-voltage-cv',
+  'averaged-cell-voltage-acv',
+  'filtered-cell-voltage-fcv',
+  'redundant-cell-voltage-sv',
+  'gpio-aux-gp',
+  'redundant-gpio-rgp',
+]);
+
+// ADBMS6830-family cell ADC: code * 150 µV/LSB + 1.5V offset — verify
+// against your exact part/datasheet revision and adjust if it differs.
+const VOLTAGE_SCALE_V = 0.00015;
+const VOLTAGE_OFFSET_V = 1.5;
+
+// Cell-voltage groups pack 6 regs x 3 codes = 18 slots, but a 16-cell pack
+// only populates the first 16 — the rest (here, CVFR's 2nd/3rd codes) are
+// unused padding bytes (0xFF) rather than real channels. Cap rendering per
+// group so padding doesn't show up as bogus ~9.8V readings. GP/RGP (aux/GPIO
+// channels) aren't cell-count based, so they're left uncapped.
+const GROUP_CELL_LIMITS = {
+  'cell-voltage-cv': 16,
+  'averaged-cell-voltage-acv': 16,
+  'filtered-cell-voltage-fcv': 16,
+  'redundant-cell-voltage-sv': 16,
+};
+
+const GROUPS = []; // [{id, label, regNames: []}]
+const REG_TO_GROUP = {}; // name -> group id
+{
+  let current = null;
+  REGISTERS.forEach(([name, label]) => {
+    if (!current || current.label !== label) {
+      current = { id: slugify(label), label, regNames: [] };
+      GROUPS.push(current);
+    }
+    current.regNames.push(name);
+    REG_TO_GROUP[name] = current.id;
+  });
+}
+
+// ---- Decode helpers ----
+// Each register's 6 bytes = three little-endian 16-bit codes.
+function decodeCodes(bytes) {
+  const codes = [];
+  for (let i = 0; i < 6; i += 2) {
+    const lo = bytes[i], hi = bytes[i + 1];
+    codes.push((lo === null || hi === null) ? null : (lo | (hi << 8)));
+  }
+  return codes;
+}
+
+function renderVoltageGroup(regNames, limit) {
+  let html = '';
+  let n = 1;
+  for (const name of regNames) {
+    for (const code of decodeCodes(regState[name].bytes)) {
+      if (limit && n > limit) return html;
+      const label = 'C' + n++;
+      html += (code === null)
+        ? `<span class="chip empty">${label}: --</span>`
+        : `<span class="chip">${label}: ${(code * VOLTAGE_SCALE_V + VOLTAGE_OFFSET_V).toFixed(4)}V</span>`;
+    }
+  }
+  return html;
+}
+
+function chipStr(label, value) {
+  return `<span class="chip">${label}: ${value}</span>`;
+}
+
+// ---- Per-register decoders ----
+// Keyed by register name. If a register has an entry here, its processed
+// chips come from this function instead of the generic raw-code dump.
+// Add more entries the same way to decode other registers later.
+const REGISTER_DECODERS = {};
+
+function decodeCFGA(bytes) {
+  const [b0, b1, b2, b3, b4, b5] = bytes;
+  if (bytes.every(b => b === null)) return `<span class="chip empty">CFGAR: no data</span>`;
+
+  const bit = (b, i) => (b === null) ? null : ((b >> i) & 1);
+  const field = (b, hi, lo) => (b === null) ? null : ((b >> lo) & ((1 << (hi - lo + 1)) - 1));
+
+  const THRESH = ['5.1 mV', '8.1 mV (default)', '9 mV', '10.05 mV', '15 mV', '19.95 mV', '25.05 mV', '40.05 mV'];
+  const FC = ['Filter disabled', '110Hz', '45Hz', '21Hz', '10Hz', '5Hz', '1.25Hz', '0.625Hz'];
+  const onOff = (v) => v === null ? '--' : (v ? 'on' : 'off');
+
+  const chips = [`<span class="chip tag">CFGAR</span>`];
+
+  chips.push(chipStr('REFON', onOff(bit(b0, 7))));
+
+  const thr = field(b0, 2, 0);
+  chips.push(chipStr('Comp. Threshold', thr === null ? '--' : THRESH[thr]));
+
+  chips.push(chipStr('FLAG_D', b1 === null ? '--' : '0b' + b1.toString(2).padStart(8, '0')));
+
+  const soakEn = bit(b2, 7);
+  chips.push(chipStr('Soak Time', soakEn === null ? '--' : (soakEn ? 'enabled' : 'disabled')));
+  const soakRange = bit(b2, 6);
+  chips.push(chipStr('Soak Range', soakRange === null ? '--' : (soakRange ? 'long' : 'short')));
+
+  const owa = field(b2, 5, 3);
+  chips.push(chipStr('OWA', owa === null ? '--' : owa));
+
+  // GPIO 1-10 pull-down state: bit = 1 -> pulled down (on)
+  if (b3 !== null && b4 !== null) {
+    const active = [];
+    for (let i = 0; i < 8; i++) if ((b3 >> i) & 1) active.push(i + 1);
+    for (let i = 0; i < 2; i++) if ((b4 >> i) & 1) active.push(9 + i);
+    chips.push(chipStr('GPIO pull-down', active.length ? active.join(',') : 'none'));
+  } else {
+    chips.push(chipStr('GPIO pull-down', '--'));
+  }
+
+  chips.push(chipStr('SNAP_ST', bit(b5, 5) === null ? '--' : (bit(b5, 5) ? 'activated' : 'deactivated')));
+  chips.push(chipStr('MUTE_ST', bit(b5, 4) === null ? '--' : (bit(b5, 4) ? 'activated' : 'deactivated')));
+  chips.push(chipStr('COMM_BK', bit(b5, 3) === null ? '--' : bit(b5, 3)));
+
+  const fc = field(b5, 2, 0);
+  chips.push(chipStr('FC', fc === null ? '--' : FC[fc]));
+
+  return chips.join('');
+}
+REGISTER_DECODERS['CFGAR'] = decodeCFGA;
+
+function decodeCFGB(bytes) {
+  const [b0, b1, b2, b3, b4, b5] = bytes;
+  if (bytes.every(b => b === null)) return `<span class="chip empty">CFGBR: no data</span>`;
+
+  const bit = (b, i) => (b === null) ? null : ((b >> i) & 1);
+  const field = (b, hi, lo) => (b === null) ? null : ((b >> lo) & ((1 << (hi - lo + 1)) - 1));
+  const has = (...vs) => vs.every(v => v !== null && v !== undefined);
+
+  // Thresholds: 12-bit VUV/VOV code, code * 16 * 150 µV + 1.5V (per datasheet formula)
+  const THRESH_SCALE = 16 * 0.00015;
+
+  const chips = [`<span class="chip tag">CFGBR</span>`];
+
+  const vuvLow = field(b1, 3, 0);
+  const vuv = has(b0, vuvLow) ? (vuvLow << 8) | b0 : null;
+  chips.push(chipStr('VUV (UV threshold)', vuv === null ? '--' : `${vuv} (${(vuv * THRESH_SCALE + 1.5).toFixed(4)}V)`));
+
+  const ovHigh = field(b1, 7, 4);
+  const vov = has(b2, ovHigh) ? (b2 << 4) | ovHigh : null;
+  chips.push(chipStr('VOV (OV threshold)', vov === null ? '--' : `${vov} (${(vov * THRESH_SCALE + 1.5).toFixed(4)}V)`));
+
+  const dtmen = bit(b3, 7);
+  chips.push(chipStr('DTMEN', dtmen === null ? '--' : (dtmen ? 'enabled' : 'disabled')));
+
+  const dtrng = bit(b3, 6);
+  chips.push(chipStr('DTRNG', dtrng === null ? '--' : (dtrng ? 'long (16min steps, 0-16.8h)' : 'short (1min steps, 0-63min)')));
+
+  const dcto = field(b3, 5, 0);
+  if (dcto === null) {
+    chips.push(chipStr('DCTO', '--'));
+  } else {
+    const minutes = dtrng ? dcto * 16 : dcto * 1;
+    chips.push(chipStr('DCTO', `${dcto} (~${minutes} min)`));
+  }
+
+  // DCC1-16: 1 = discharge switch on for that cell
+  if (b4 !== null && b5 !== null) {
+    const active = [];
+    for (let i = 0; i < 8; i++) if ((b4 >> i) & 1) active.push(i + 1);
+    for (let i = 0; i < 8; i++) if ((b5 >> i) & 1) active.push(i + 9);
+    chips.push(chipStr('DCC (discharging)', active.length ? active.join(',') : 'none'));
+  } else {
+    chips.push(chipStr('DCC (discharging)', '--'));
+  }
+
+  return chips.join('');
+}
+REGISTER_DECODERS['CFGBR'] = decodeCFGB;
+
+function renderRawGroup(regNames) {
+  return regNames.map((name) => {
+    const decoder = REGISTER_DECODERS[name];
+    if (decoder) return decoder(regState[name].bytes);
+    const text = decodeCodes(regState[name].bytes).map(c => c === null ? '--' : c).join(', ');
+    return `<span class="chip">${name}: ${text}</span>`;
+  }).join('');
+}
+
+function updateProcessedRow(groupId) {
+  const group = GROUPS.find(g => g.id === groupId);
+  const container = document.getElementById(`processed-${groupId}`);
+  if (!group || !container) return;
+  container.innerHTML = VOLTAGE_GROUP_IDS.has(groupId)
+    ? renderVoltageGroup(group.regNames, GROUP_CELL_LIMITS[groupId])
+    : renderRawGroup(group.regNames);
+}
+
+// ---- Build table: one <tbody> per group so it can collapse independently ----
+const table = document.getElementById('regTable');
+GROUPS.forEach((group) => {
+  const tb = document.createElement('tbody');
+  tb.className = 'group-body';
+  tb.id = 'group-' + group.id;
+
+  const gRow = document.createElement('tr');
+  gRow.className = 'group-row';
+  gRow.innerHTML = `<td colspan="7"><span class="chevron">▾</span>${group.label}<span class="count">${group.regNames.length} reg${group.regNames.length > 1 ? 's' : ''}</span></td>`;
+  gRow.addEventListener('click', () => tb.classList.toggle('collapsed'));
+  tb.appendChild(gRow);
+
+  const hRow = document.createElement('tr');
+  hRow.className = 'head-row';
+  hRow.innerHTML = `<td></td>` + [0,1,2,3,4,5].map(i => `<td style="text-align:center">B${i}</td>`).join('');
+  tb.appendChild(hRow);
+
+  group.regNames.forEach((name) => {
+    const row = document.createElement('tr');
+    row.className = 'reg-row';
+    row.id = 'row-' + name;
+    row.innerHTML = `<td class="name-cell"><span class="dot" id="dot-${name}"></span>${name}</td>` +
+      [0,1,2,3,4,5].map(i => `<td class="byte-cell empty" id="byte-${name}-${i}">--</td>`).join('');
+    tb.appendChild(row);
+  });
+
+  const pRow = document.createElement('tr');
+  pRow.className = 'processed-row';
+  pRow.innerHTML = `<td colspan="7"><div class="processed-content" id="processed-${group.id}"><span class="placeholder">no data yet</span></div></td>`;
+  tb.appendChild(pRow);
+
+  table.appendChild(tb);
+});
+
+// ---- Update a register's bytes in the UI ----
+function updateRegister(name, bytes) {
+  if (!regState[name]) return; // unknown key, ignore
+  const state = regState[name];
+  state.lastUpdate = Date.now();
+  for (let i = 0; i < 6; i++) {
+    const val = bytes[i];
+    state.bytes[i] = (typeof val === 'number') ? (val & 0xFF) : null;
+    const cell = document.getElementById(`byte-${name}-${i}`);
+    if (!cell) continue;
+    if (state.bytes[i] === null) {
+      cell.textContent = '--';
+      cell.classList.add('empty');
+    } else {
+      cell.textContent = state.bytes[i].toString(16).toUpperCase().padStart(2, '0');
+      cell.classList.remove('empty');
+      cell.classList.add('flash');
+      setTimeout(() => cell.classList.remove('flash'), 400);
+    }
+  }
+  updateProcessedRow(REG_TO_GROUP[name]);
+}
+
+// ---- Freshness indicator tick (dot color only — data is never faded/dimmed) ----
+setInterval(() => {
+  const now = Date.now();
+  REGISTERS.forEach(([name]) => {
+    const st = regState[name];
+    const dot = document.getElementById('dot-' + name);
+    const age = now - st.lastUpdate;
+    dot.classList.remove('connected', 'idle');
+    if (st.lastUpdate === 0) {
+      // never updated — neutral dot, no styling on the row
+    } else if (age < 1000) {
+      dot.classList.add('connected');
+    } else if (age < 3000) {
+      dot.classList.add('idle');
+    }
+  });
+}, 400);
+
+// ---- Log panel ----
+const logPanel = document.getElementById('logPanel');
+const sessionLog = [];
+function logLine(line) {
+  sessionLog.push({ t: Date.now(), line });
+  const div = document.createElement('div');
+  div.textContent = line;
+  logPanel.appendChild(div);
+  while (logPanel.children.length > 9) logPanel.removeChild(logPanel.children[1]);
+  logPanel.scrollTop = logPanel.scrollHeight;
+}
+
+// ---- Parse an incoming line: expects a JSON object of {"REGNAME":[b0..b5], ...} ----
+// Works whether the firmware sends one register per line or the whole struct per line.
+function handleLine(line) {
+  logLine(line);
+  let parsed;
+  try {
+    parsed = JSON.parse(line);
+  } catch (e) {
+    return; // not JSON, skip (still shown in raw log above)
+  }
+  if (parsed && typeof parsed === 'object') {
+    for (const [key, value] of Object.entries(parsed)) {
+      if (Array.isArray(value)) updateRegister(key, value);
+    }
+  }
+}
+
+// ---- Web Serial plumbing ----
+const connectBtn = document.getElementById('connectBtn');
+const baudSelect = document.getElementById('baudSelect');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const supportBanner = document.getElementById('supportBanner');
+
+let port, reader, keepReading = false, connected = false;
+
+function setStatus(s) {
+  statusDot.classList.remove('connected', 'idle');
+  if (s === 'connected') { statusDot.classList.add('connected'); statusText.textContent = 'CONNECTED'; }
+  else { statusText.textContent = 'DISCONNECTED'; }
+}
+
+if (!('serial' in navigator)) {
+  supportBanner.innerHTML = `<b>Web Serial not available.</b> This needs Chrome or Edge, and the page must be opened directly (not inside an iframe/preview). Save this file and open it directly in the browser. "Simulate" below still works anywhere.`;
+  connectBtn.disabled = true;
+} else {
+  supportBanner.innerHTML = `<b>Note:</b> if "Connect" does nothing or errors, you're likely viewing this inside an embedded preview. Save the file and open it directly in Chrome/Edge — Web Serial is blocked inside iframes.`;
+}
+
+async function connectSerial() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: Number(baudSelect.value) });
+    keepReading = true;
+    connected = true;
+    connectBtn.textContent = 'Disconnect';
+    connectBtn.disabled = true; // re-enabled once the loop is actually running
+    setStatus('connected');
+    readLoop();
+  } catch (e) {
+    logLine('Connect failed: ' + e.message);
+  }
+}
+
+// Only requests a stop here. Actual port.close() happens in readLoop's
+// cleanup, after the pipeTo() has actually unwound — closing the port
+// while it's still piped/locked is what caused disconnect to hang/no-op.
+async function disconnectSerial() {
+  if (!connected) return;
+  connectBtn.disabled = true;
+  connectBtn.textContent = 'Disconnecting…';
+  keepReading = false;
+  try {
+    if (reader) await reader.cancel();
+  } catch (e) {
+    logLine('Cancel error: ' + e.message);
+  }
+}
+
+async function readLoop() {
+  const textDecoder = new TextDecoderStream();
+  const readableClosed = port.readable.pipeTo(textDecoder.writable).catch(() => {
+    // Expected once reader.cancel() runs — the pipe rejects on cancel, that's normal.
+  });
+  reader = textDecoder.readable.getReader();
+  connectBtn.disabled = false;
+  let buf = '';
+  try {
+    while (keepReading) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (line) handleLine(line);
+      }
+    }
+  } catch (e) {
+    logLine('Read error: ' + e.message);
+  } finally {
+    try { reader.releaseLock(); } catch (e) {}
+    await readableClosed; // wait for the pipe to fully release port.readable's lock
+    try {
+      await port.close();
+    } catch (e) {
+      logLine('Close error: ' + e.message);
+    }
+    port = null;
+    reader = null;
+    connected = false;
+    connectBtn.disabled = false;
+    connectBtn.textContent = 'Connect';
+    setStatus('disconnected');
+  }
+}
+
+connectBtn.addEventListener('click', () => {
+  if (connected) disconnectSerial(); else connectSerial();
+});
+
+// ---- Simulate mode (works with no hardware, useful for previewing here) ----
+let simTimer = null;
+document.getElementById('simBtn').addEventListener('click', (e) => {
+  if (simTimer) {
+    clearInterval(simTimer);
+    simTimer = null;
+    e.target.textContent = 'Simulate';
+    return;
+  }
+  e.target.textContent = 'Stop Sim';
+  simTimer = setInterval(() => {
+    const [name] = REGISTERS[Math.floor(Math.random() * REGISTERS.length)];
+    const bytes = Array.from({ length: 6 }, () => Math.floor(Math.random() * 256));
+    const line = JSON.stringify({ [name]: bytes });
+    handleLine(line);
+  }, 150);
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  REGISTERS.forEach(([name]) => {
+    regState[name] = { bytes: new Array(6).fill(null), lastUpdate: 0 };
+    for (let i = 0; i < 6; i++) {
+      const cell = document.getElementById(`byte-${name}-${i}`);
+      cell.textContent = '--';
+      cell.classList.add('empty');
+    }
+  });
+  GROUPS.forEach((group) => {
+    document.getElementById(`processed-${group.id}`).innerHTML = '<span class="placeholder">no data yet</span>';
+  });
+  sessionLog.length = 0;
+  logPanel.innerHTML = '<div class="log-title">RAW SERIAL LOG (last 8 lines)</div>';
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(sessionLog, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bms_log_${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
