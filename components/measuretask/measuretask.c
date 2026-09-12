@@ -39,7 +39,10 @@ void measureTask (void *pvParameters){
     } 
     else{
       ///// if balancing /////
-      // Find lowest cell voltage
+      // Read Cell Voltage
+      // Find lowest cell voltage across all modules
+      float minVoltage = 4.2f;
+      
       // calculate array of cells to discharge
       // flip discharge switches accordingly
       // Send ADCV with RD=1, DCP=0, CONT=0 to single-shot read cell voltages (interrupts balance for 8ms) 

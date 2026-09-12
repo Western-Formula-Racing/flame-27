@@ -12,7 +12,7 @@ static const char* TAG = "Main";
 
 static uint8_t module_number = 1; // default until serial input changes it
 
-static void update_module_number_from_serial(void)
+static void read_serial_command(void)
 {
     uint8_t rx_buf[16];
     int len = usb_serial_jtag_read_bytes(rx_buf, sizeof(rx_buf) - 1, 0);
