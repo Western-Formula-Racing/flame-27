@@ -132,8 +132,9 @@ void ADBMSCommand(uint16_t command);
 
 // higher level abstraction functions
 void configureBMS(BMSConfig_t newconfig);
-BMSConfig_t getBMSConfig();
-void ADBMS_ReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
+BMSConfig_t ADBMSGetBMSConfig();
+void ADBMSReadSerialIDs(uint8_t num_modules);
+void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
 
 // debug functions
 void ADBMSSerialRegisterDump();

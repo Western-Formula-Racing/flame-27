@@ -111,5 +111,26 @@
 #define IIR_FILTER_1_25HZ   6
 #define IIR_FILTER_0_625HZ  7
 
+// ADAX/ADAX2 channel definitions
+#define ADAX_CH_ALL 0
+#define ADAX_CH_GPIO1   0b1
+#define ADAX_CH_GPIO2   0b10
+#define ADAX_CH_GPIO3   0b11
+#define ADAX_CH_GPIO4   0b100
+#define ADAX_CH_GPIO5   0b101
+#define ADAX_CH_GPIO6   0b110
+#define ADAX_CH_GPIO7   0b111
+#define ADAX_CH_GPIO8   0b1000
+#define ADAX_CH_GPIO9   0b1001
+#define ADAX_CH_GPIO10  0b1010
+#define ADAX_CH_VREF2   0b10000
+#define ADAX_CH_VD      0b10001
+#define ADAX_CH_VA      0b10010
+#define ADAX_CH_ITEMP   0b10011
+#define ADAX_CH_VPV     0b10100
+#define ADAX_CH_VMV     0b10101
+#define ADAX_CH_VRES    0b10110
+
+
 // macros
 #define REG_TO_V(value) ((float)value * 0.00015f) + 1.5f

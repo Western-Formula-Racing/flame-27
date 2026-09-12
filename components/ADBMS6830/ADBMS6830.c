@@ -5,6 +5,9 @@
 static const char *TAG = "ADBMS6830";
 
 //CRC Processing functions
+
+// get the PEC for a command (2 bytes) - returns 2 byte PEC
+// @param command 16-bit command to calculate PEC for
 uint16_t getCommandPEC(uint16_t command){
   uint16_t crc = 0x0010;   //seed
   crc = command_crc15_table[(crc >> 7) ^ ((command>>8) & 0xFF)] ^ ((crc << 8) & 0x7FFF);
@@ -12,7 +15,10 @@ uint16_t getCommandPEC(uint16_t command){
   crc = (crc << 1);        // align to 16 bits, LSB=0
   return crc;
 }
-
+// get the PEC for a data array (6 bytes) - returns 2 byte PEC
+// @param pDataBuf pointer to the data array
+// @param nLength length of the data array
+// @param commandCounter command counter for PEC calculation
 uint16_t getDataPEC(uint8_t *pDataBuf, int nLength, int commandCounter)
 {
     uint16_t nRemainder = 0x10; /* PEC_SEED */
@@ -48,7 +54,7 @@ uint16_t getDataPEC(uint8_t *pDataBuf, int nLength, int commandCounter)
     }
     return ((uint16_t)(nRemainder & 0x3FF));
 }
-
+// 
 void preprocess_command(uint16_t command, uint8_t* command_bytes, uint8_t* PEC_bytes){
     // CMD0 = upper bits, CMD1 = lower bits
     command_bytes[0] = (command >> 8) & 0xFF;   // CMD0
@@ -110,10 +116,10 @@ void ADBMSRead(uint16_t command, uint8_t* data){
   ESP_LOGD(TAG,"Read Command: [%X,%X,%X,%X]",tx_data[0],tx_data[1],tx_data[2],tx_data[3]);
 
   pec_t pecValid = PEC_INVALID;
-  while(pecValid==PEC_INVALID){
+  //while(pecValid==PEC_INVALID){
     isospi_tx_rx(tx_data,4,data,8,NULL);
     pecValid = verifyRx(data);
-  }
+  //}
 
   ESP_LOGD(TAG,"RX [%X,%X,%X,%X,%X,%X,%X,%X]",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
 }
@@ -225,7 +231,7 @@ void configureBMS(BMSConfig_t newconfig){
   ADBMSWrite(WRCFGB,regB_data,8);
 }
 
-BMSConfig_t getBMSConfig(){
+BMSConfig_t ADBMSGetBMSConfig(){
   uint8_t regA_data[8];
   uint8_t regB_data[8];
 
@@ -257,8 +263,37 @@ BMSConfig_t getBMSConfig(){
   return config;
 }
 
+// Read chain of Serial IDs
+
+void ADBMSReadSerialIDs(uint8_t num_modules){
+  // tx RDSID
+  uint8_t tx_data[4] = {0};
+  preprocess_command(RDSID, &tx_data[0],&tx_data[2]);
+  // The recieved data is in the format (Data[6], PEC[2]) repeating for all chips in the chain.
+  // create a temporary buffer to store all the data
+  size_t rxDataLength = num_modules*(6+2);
+  uint8_t rxData[rxDataLength];
+  
+  pec_t pecValid = PEC_VALID;
+  // recieve data, and check PEC for every block of data
+  do {
+    isospi_tx_rx(tx_data,4,rxData,rxDataLength,NULL);
+
+    for(int i=0; i<num_modules; i++){
+      if (pecValid == PEC_VALID){
+        // keep going if valid, stop and retry if any invalid PEC
+        pecValid = verifyRx(rxData+(i*8));
+      }
+    }
+  } while(pecValid == PEC_INVALID);
+  //log each serial ID
+  for(int i=0; i<num_modules; i++){
+    ESP_LOGI(TAG,"Module %d Serial ID: %02X%02X%02X%02X%02X%02X",i+1,rxData[i*8],rxData[i*8+1],rxData[i*8+2],rxData[i*8+3],rxData[i*8+4],rxData[i*8+5]);
+  }
+}
+
 // Read filtered cell voltages, assuming output float array is in format [module][cell]
-void ADBMS_ReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module){
+void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module){
   // tx RDFCALL
   uint8_t tx_data[4] = {0};
   preprocess_command(RDFCALL, &tx_data[0],&tx_data[2]);

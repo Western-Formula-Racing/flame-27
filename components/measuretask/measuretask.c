@@ -14,14 +14,15 @@ void measureTask (void *pvParameters){
   esp_task_wdt_add(NULL);  // add task to watchdog timer, NULL = current task
 
   Data_t Data;
+  uint8_t selectedThermistor = 0; // index of thermistor to read, from 0 to THERMISTORS_PER_MODULE-1
   // start ADCV continuous reading
-
+  ADBMSCommand(ADCV(1,1,0,0,0));
   while(1){
     // Task Code
     if(getCurrentState() != BALANCING){
       //// if not balancing /////
       // odd open-wire ADSV
-      ADBMSCommand(ADSV(0,0,0b1));
+      ADBMSCommand(ADSV(0,0,1));
       vTaskDelay(pdMS_TO_TICKS(8));
       // even open-wire ADSV
       ADBMSCommand(ADSV(0,0,0b10));
@@ -34,7 +35,7 @@ void measureTask (void *pvParameters){
       // read CxOV / CxUV for over/undervolt
       ADBMSBroadcastRead(RDSTATD, (uint8_t*)Data.ADBMS_STATD, NUM_MODULES);
       // read FCxV for filtered cell voltages
-      ADBMS_ReadFilteredVoltages(Data.ADBMS_filteredVoltages,NUM_MODULES,CELLS_PER_MODULE);
+      ADBMSReadFilteredVoltages(Data.ADBMS_filteredVoltages,NUM_MODULES,CELLS_PER_MODULE);
     } 
     else{
       ///// if balancing /////
@@ -44,9 +45,14 @@ void measureTask (void *pvParameters){
       // Send ADCV with RD=1, DCP=0, CONT=0 to single-shot read cell voltages (interrupts balance for 8ms) 
     }
       // read internal die temp
+      ADBMSCommand(ADAX(0,0,ADAX_CH_ITEMP));
       // read VPV for module voltages
+      ADBMSCommand(ADAX(0,0,ADAX_CH_VPV));
       // read AUX ADC for selected thermistor
-      // increment selected thermistor by 1
+      ADBMSCommand(ADAX(0,0,ADAX_CH_GPIO1));
+      // increment selected thermistor by 1 by adjusting GPIO pull-downs
+      selectedThermistor = (selectedThermistor + 1) % THERMISTORS_PER_MODULE;
+      
       // read relay states
       // read external ADC for current sensor & HV voltage sense
       // check for any fault flags set
