@@ -1,7 +1,8 @@
 #pragma once
 #include "driver/gpio.h"
 
-#define SERIAL_DEBUG 1 // enable serial debug output
+#define FTTI 500 // Fault Tolerant Time Interval in milliseconds
+#define BALANCE_THRESHOLD_V 0.01f // Voltage threshold for balancing, in volts
 
 #define NUM_MODULES 5
 #define CELLS_PER_MODULE 14

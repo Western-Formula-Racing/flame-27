@@ -131,6 +131,12 @@
 #define ADAX_CH_VMV     0b10101
 #define ADAX_CH_VRES    0b10110
 
+// TMUX pin mapping to adbms gpio
+#define ADBMS_TMUX_A0 10
+#define ADBMS_TMUX_A1 9
+#define ADBMS_TMUX_A2 8
+#define ADBMS_TMUX_A3 7
+
 
 // macros
 #define REG_TO_V(value) ((float)value * 0.00015f) + 1.5f
