@@ -6,10 +6,16 @@
 typedef struct{
   ADBMS_StatusGroupC_t ADBMS_STATC[NUM_MODULES];
   ADBMS_StatusGroupD_t ADBMS_STATD[NUM_MODULES];
-  float    ADBMS_filteredVoltages[NUM_MODULES][CELLS_PER_MODULE];  // filtered cell voltages
+  float    ADBMS_cellVoltages[NUM_MODULES][CELLS_PER_MODULE];  // filtered cell voltages
   float    ADBMS_dieTemp;
   float    ADBMS_moduleVoltage;
   float    temps[THERMISTORS_PER_MODULE];
+
+
+  //Balancing Data
+  uint8_t dccMask[NUM_MODULES][CELLS_PER_MODULE]; // Discharge control mask, 1 = discharge, 0 = no discharge
+  float balanceMaxCellDelta; // Max delta during paused balacing, used to determine if balancing is complete
+  float balanceTargetVoltage; // Target voltage for balancing, for diagnotics only
   // Relays
   uint8_t IMDRelay : 1;
   uint8_t AMSRelay : 1;
@@ -28,3 +34,5 @@ typedef struct{
 } Data_t;
 
 void measureTask (void *pvParameters);
+float getMaxCellVoltageDelta(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
+float updateBalanceTargets(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module, uint8_t dccMask[][CELLS_PER_MODULE], float threshold_v);
