@@ -38,13 +38,3 @@ void app_main() {
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
-
-// Tests to run:
-
-// - [ ] PEC validation for read-all commands
-// - [ ] PEC validation for multi-board reads
-// - [ ] reading config from multiple BMS boards
-// - [ ] writing config to multiple BMS boards
-// - [ ] 16-cell voltage measurement
-// - [ ] 16-channel thermistor measurement
-// - [ ] EEPROM chip writing/reading
