@@ -6,20 +6,31 @@
 #include "statetask.h"
 
 static const char* TAG = "measuretask"; 
+TickType_t elapsed;
+static Data_t Data;
+
+const Data_t* getMeasureData(void) {
+    return &Data;
+}
 
 void measureTask (void *pvParameters){
   TickType_t last_wake = xTaskGetTickCount();
-  BaseType_t was_delayed = pdFALSE;
   uint8_t cyclesSinceFTTI = 0;
   esp_task_wdt_add(NULL);  // add task to watchdog timer, NULL = current task
 
-  Data_t Data;
-  uint8_t selectedThermistor = 0; // index of thermistor to read, from 0 to THERMISTORS_PER_MODULE-1
   // start ADCV continuous reading
   ADBMSCommand(ADCV(1,1,0,0,0));
 
+  TickType_t past_elapsed[5] = {0};
+  uint8_t elapsed_idx = 0;
+
   while(1){
     // Task Code
+    // ADBMS Tasks
+
+    // read all aux ADCs
+    ADBMSCommand(ADAX(0,0,0));
+
     if(getCurrentState() != BALANCING){
       //// if not balancing /////
 
@@ -34,48 +45,39 @@ void measureTask (void *pvParameters){
         // reset continuous ADSV
         ADBMSCommand(ADSV(1,0,0));
         vTaskDelay(pdMS_TO_TICKS(8));
-        // read CSxFLT for ADC mismatch/ open wire (first half of register group C)
-        ADBMSBroadcastRead(RDSTATC(0), (uint8_t*)Data.ADBMS_STATC, NUM_MODULES);
-        // read CxOV / CxUV for over/undervolt
-        ADBMSBroadcastRead(RDSTATD, (uint8_t*)Data.ADBMS_STATD, NUM_MODULES);
+        // read CSxFLT for ADC mismatch / open wire (first half of register group C)
+        ADBMSReadStat(&Data.ADBMS_STAT);
         cyclesSinceFTTI = 0;
-      }
+      } else{cyclesSinceFTTI++; }
       // read FCxV for filtered cell voltages
-      ADBMSReadFilteredVoltages(Data.ADBMS_cellVoltages,NUM_MODULES,CELLS_PER_MODULE);
+      ADBMSReadFilteredVoltages(Data.ADBMS_filteredCellVoltages);
+      // read CxV for normal voltages
+      ADBMSReadVoltages(Data.ADBMS_cellVoltages);
     }
     else{
       ///// if balancing /////
-
-
-
       //every FTTI, complete a full set of safety checks (Page 30 of ADBMS6830 datasheet):
       if(cyclesSinceFTTI >= (FTTI/10)){
         // Interrupt discharge, and compare ADCs
         ADBMSCommand(ADSV(1,0,0));
         vTaskDelay(pdMS_TO_TICKS(16)); // wait for 16ms for ADC conversions to complete
         // read all averaged C-ADC cell voltages, check max delta, and update discharge mask
-        ADBMSReadAverageVoltages(Data.ADBMS_cellVoltages,NUM_MODULES,CELLS_PER_MODULE);
-        Data.balanceMaxCellDelta = getMaxCellVoltageDelta(Data.ADBMS_cellVoltages,NUM_MODULES,CELLS_PER_MODULE);
+        // ADBMSReadAverageVoltages(Data.ADBMS_cellVoltages,NUM_MODULES,CELLS_PER_MODULE);
+        //Data.balanceMaxCellDelta = getMaxCellVoltageDelta(Data.ADBMS_cellVoltages,NUM_MODULES,CELLS_PER_MODULE);
         updateBalanceTargets(Data.ADBMS_cellVoltages, NUM_MODULES, CELLS_PER_MODULE, Data.dccMask, BALANCE_THRESHOLD_V);
         ADBMSCommand(ADSV(0,0,1)); // odd open-wire ADSV
         vTaskDelay(pdMS_TO_TICKS(8));
         ADBMSCommand(ADSV(0,0,2)); // even open-wire ADSV
         vTaskDelay(pdMS_TO_TICKS(8));
         // read CSxFLT for ADC mismatch/ open wire (first half of register group C)
-        ADBMSBroadcastRead(RDSTATC(0), (uint8_t*)Data.ADBMS_STATC, NUM_MODULES);
-        // read CxOV / CxUV for over/undervolt
-        ADBMSBroadcastRead(RDSTATD, (uint8_t*)Data.ADBMS_STATD, NUM_MODULES);
+        ADBMSReadStat(&Data.ADBMS_STAT);
         cyclesSinceFTTI = 0;
-      }
+      } else{cyclesSinceFTTI++; }
     }
-      // read internal die temp
-      ADBMSCommand(ADAX(0,0,ADAX_CH_ITEMP));
-      // read VPV for module voltages
-      ADBMSCommand(ADAX(0,0,ADAX_CH_VPV));
-      // read AUX ADC for selected thermistor
-      ADBMSCommand(ADAX(0,0,ADAX_CH_GPIO1));
-      // increment selected thermistor by 1 by adjusting GPIO pull-downs
-      selectedThermistor = (selectedThermistor + 1) % THERMISTORS_PER_MODULE;
+    // read aux adc data and convert to data structure:
+    ADBMSReadAux(Data.ADBMS_temps, Data.ADBMS_VMV, Data.ADBMS_moduleVoltage);
+    //ESP_LOGI(TAG,"Internal die temp: %.2f",Data.ADBMS_dieTemp);
+      // Motherboard Tasks:
       // read relay states
       // read external ADC for current sensor & HV voltage sense
       // check for any fault flags set
@@ -88,25 +90,26 @@ void measureTask (void *pvParameters){
     // reset WDT
     esp_task_wdt_reset();
 
-    // 10ms nominal period
-    const TickType_t period = pdMS_TO_TICKS(10);
-    TickType_t now = xTaskGetTickCount();
-    TickType_t elapsed = now - last_wake;
+    TickType_t current_elapsed = xTaskGetTickCount() - last_wake;
+    past_elapsed[elapsed_idx] = current_elapsed;
+    elapsed_idx = (elapsed_idx + 1) % 5;
 
-    // If long FTTI safety checks caused execution to overrun the 10ms window,
-    // advance last_wake in integer multiples of period to maintain strict 10ms grid phase alignment
-    if (elapsed >= period) {
-      TickType_t missed_periods = elapsed / period;
-      last_wake += missed_periods * period;
-      ESP_LOGW(TAG, "FTTI/task overrun (%lu ms). Realigned grid, skipped %lu cycle(s)",
-               (unsigned long)pdTICKS_TO_MS(elapsed), (unsigned long)missed_periods);
+    elapsed = past_elapsed[0];
+    for (int i = 1; i < 5; i++) {
+      if (past_elapsed[i] > elapsed) {
+        elapsed = past_elapsed[i];
+      }
     }
 
-    // Delay until next 10ms grid boundary
+    // 50ms nominal period
+    const TickType_t period = pdMS_TO_TICKS(50);
     vTaskDelayUntil(&last_wake, period);
   }
 }
 
+TickType_t getElasped(){
+  return elapsed;
+}
 float updateBalanceTargets(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module, uint8_t dccMask[][CELLS_PER_MODULE], float threshold_v) {
   if (num_modules == 0 || cells_per_module == 0) {
     return 0.0f;
@@ -138,14 +141,14 @@ float updateBalanceTargets(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_m
     return min_voltage;
 }
 
-void selectTherimstor(uint8_t selectedThermistor) {
-  BMSConfig_t bmsConfig = ADBMSGetBMSConfig(); // Ensure BMSConfig is up to date
-  
-  bmsConfig.gpo = 0; // Clear previous GPO settings
-  // Set the appropriate GPO bits based on the selected thermistor
-  bmsConfig.gpo |= (selectedThermistor & 0x1) << ADBMS_TMUX_A0; // Set GPO for A0
-  bmsConfig.gpo |= ((selectedThermistor >> 1) & 0x1) << ADBMS_TMUX_A1; // Set GPO for A1
-  bmsConfig.gpo |= ((selectedThermistor >> 2) & 0x1) << ADBMS_TMUX_A2; // Set GPO for A2
-  bmsConfig.gpo |= ((selectedThermistor >> 3) & 0x1) << ADBMS_TMUX_A3; // Set GPO for A3
-  
+void startMeasureTask(){
+  xTaskCreatePinnedToCore(
+    measureTask,
+    "measuretask",
+    4096,
+    NULL,
+    PRIO_MEASURE,
+    NULL,
+    1
+  );
 }

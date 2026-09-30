@@ -9,32 +9,68 @@
 #include "statetask.h"
 #include "ADBMS6830.h"
 #include "config.h"
-#include "cli_tool.h"
+#include "logger.h"
+#include "build_info.h"
 
-static const char* TAG = "Main"; 
+__attribute__((used, section(".rodata.build_info")))
+const char build_info[] = "BUILDINFO|" BUILD_ID "|" BUILD_USER "|" BUILD_HOST "|" BUILD_TIME;
+
+static const char* TAG = "Main";
+
+uint8_t AUXA[2][8];
+int16_t temp_raw;
+float temp_voltage;
+float temp_c;
+float cellVoltages[NUM_MODULES][CELLS_PER_MODULE];
 
 void app_main() {
-    ESP_LOGI(TAG, "FLAME-27 BMS Firmware Starting...");
+  vTaskDelay(pdMS_TO_TICKS(2000));
+  ESP_LOGI(TAG, "FLAME-27 BMS Firmware Starting...");
+  ESP_LOGI(TAG, "Build-id: %s",BUILD_ID);
+  esp_log_level_set("Main", ESP_LOG_DEBUG);
+  esp_log_level_set("measuretask", ESP_LOG_DEBUG);
+  esp_log_level_set("ADBMS6830", ESP_LOG_DEBUG);
 
-    // Install USB Serial JTAG Driver for CLI & debug output
-    usb_serial_jtag_driver_config_t usj_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-    esp_err_t err = usb_serial_jtag_driver_install(&usj_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install USB Serial/JTAG driver: %s", esp_err_to_name(err));
-    }
+  // Hardware Initialization
+  SPI_Setup();
 
-    // Initialize CLI and launch CLI task
-    cli_init();
-    cli_start_task(5, 4096);
+  // Before continuing, keep trying to read serial IDs until no PEC errors are found
+  while(ADBMSReadSerialIDs() == PEC_INVALID){
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_LOGE(TAG,"Module Not found!");
+  }
+  ESP_LOGI(TAG,"Module Connection Verified!");
 
-    // Hardware Initialization
-    SPI_Setup();
+  // configure all devices
+  BMSConfig_t ADBMSConfig[NUM_MODULES];
+  ADBMSGetBMSConfig(ADBMSConfig);
+  for(int i = 0; i< NUM_MODULES; i++){
+    ADBMSConfig[i].refon = 1;               // keep reference on after ADC conversions, uses more power but makes conversions faster
+    ADBMSConfig[i].cth = 0b001;             // Allowable drift between C- and S-ADCs (8.1mV default)
+    ADBMSConfig[i].soakon = 0;              // disable aux ADC soak time, test this to see if it makes an impact on thermistor readings
+    ADBMSConfig[i].owrng = 0;               //short soak time range
+    ADBMSConfig[i].owa = 0;                 // open wire soak time, default 32us, can set up to 500ms
+    ADBMSConfig[i].gpo = 1;                 // GPIO pull downs off
+    ADBMSConfig[i].fc = IIR_FILTER_1_25HZ;  // IIR Filter parameter
+    ADBMSConfig[i].comm_bk = 0;             // if set to 1, disables communication propagation to further chips
+    ADBMSConfig[i].mute_st = 1;             //if set to 1, disables discharging
+    ADBMSConfig[i].snap_st = 0;             //if set to 1, activates snapshot and freezes all results registers
+    ADBMSConfig[i].vuv = V_TO_UVOV(2.7) & 0xFFF;
+    ADBMSConfig[i].vov = V_TO_UVOV(4.2) & 0xFFF;
+    ADBMSConfig[i].dtmen = 1;               // enable discharge timer monitor
+    ADBMSConfig[i].dtrng = 1;               // set range for discharge timer (1= 16 minute increments, 0= 1 minute increments)
+    ADBMSConfig[i].dcto = 8 & 0x3F;         // set for 2 hours
+    ADBMSConfig[i].dcc = 0;                 // balance switches
+  }
+  ADBMSSetBMSConfig(ADBMSConfig);
 
-    while (1) {
-        ESP_LOGI(TAG, "Heartbeat. Querying %d module(s)", NUM_MODULES);
+  // start measurement task
+  startMeasureTask();
+  //start logging task
+  startLoggerTask();
 
-        ADBMSReadSerialIDs();
-
-        vTaskDelay(pdMS_TO_TICKS(5000));
-    }
+  while (1) {
+    ESP_LOGI(TAG,"heartbeat");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }

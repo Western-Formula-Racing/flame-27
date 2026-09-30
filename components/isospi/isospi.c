@@ -33,7 +33,7 @@ void SPI_Setup(){
 
   spi_device_interface_config_t devcfg_cs1 = { 
     .mode = 3,
-    .clock_speed_hz = 1 * 1000 * 100, // 500KHz
+    .clock_speed_hz = 1 * 1000 * 1000, // 1MHz
     .spics_io_num = ISOSPI_CS,
     .flags = 0,
     .queue_size = 7,

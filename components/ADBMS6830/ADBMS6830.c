@@ -124,36 +124,10 @@ void ADBMSRead(uint16_t command, uint8_t* data){
 
   ESP_LOGD(TAG,"Read Command: [%X,%X,%X,%X]",tx_data[0],tx_data[1],tx_data[2],tx_data[3]);
 
-  pec_t pecValid = PEC_INVALID;
-  int attempts = 0;
-  while(pecValid == PEC_INVALID && attempts < 10){
-    attempts++;
-    isospi_tx_rx(tx_data,4,data,8,NULL);
-    pecValid = verifyRx(data);
-  }
-
-  if(pecValid == PEC_INVALID){
-    ESP_LOGE(TAG,"ADBMSRead failed after %d attempts: invalid PEC", attempts);
-    return;
-  }
+  isospi_tx_rx(tx_data,4,data,8,NULL);
+  verifyRx(data);
 
   ESP_LOGD(TAG,"RX [%X,%X,%X,%X,%X,%X,%X,%X]",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
-}
-
-void ADBMSReadMulti(uint16_t* command, uint8_t* data, int num_commands){
-  // Same as ADBMS_Read, but processes a chain of commands
-  uint8_t tx_data[4] = {0};
-  
-  for(int i = 0; i<num_commands ;i++){
-    ESP_LOGD(TAG,"Command chain %d",i);
-    preprocess_command(command[i], &tx_data[0],&tx_data[2]);
-
-    ESP_LOGD(TAG,"Read Command: [%X,%X,%X,%X]",tx_data[0],tx_data[1],tx_data[2],tx_data[3]);
-    
-    isospi_tx_rx(tx_data, 4, &data[i*8],8, NULL);
-
-    ESP_LOGD(TAG,"RX [%X,%X,%X,%X,%X,%X,%X,%X]",data[0+i*8],data[1+i*8],data[2+i*8],data[3+i*8],data[4+i*8],data[5+i*8],data[6+i*8],data[7+i*8]);
-  }
 }
 
 void ADBMSWrite(uint16_t command, uint8_t* data, size_t data_length){
@@ -173,44 +147,52 @@ void ADBMSWrite(uint16_t command, uint8_t* data, size_t data_length){
 }
 
 // Write a single register across all devices
-void ADBMSBroadcastWrite(uint16_t command, uint8_t* data, size_t data_length, uint8_t num_devices){
+// @param command 16-bit command to write to all devices
+// @param data pointer to the data array to write. The array must be of shape NUM_MODULES x 8, with the last 2 bytes of each 8-byte block reserved for the PEC. The data must come in the order of the devices in the chain.
+void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]){
   uint8_t command_bytes[4] = {0};
   preprocess_command(command,&command_bytes[0],&command_bytes[2]);
-  
-  size_t total_data_length = data_length * num_devices;
-  uint8_t tx_data[4+total_data_length];
-  
-  memcpy(tx_data,command_bytes,4);
-  
-  // calculate PEC for the data, and copy N times
-  preprocess_data(data,data_length);
-  for(int i=0; i < num_devices; i++){
-    memcpy(tx_data + 4 + (i*data_length),data, data_length);
+
+  uint8_t total_data_length = 8 * NUM_MODULES; // 8 bytes per module
+  uint8_t tx_data[4+ (8 * NUM_MODULES)];
+  uint8_t data_reversed[NUM_MODULES][8];
+
+  // Make a reverse-order copy so the module chain sees the data in the correct order.
+  for (int i = 0; i < NUM_MODULES; i++) {
+    memcpy(data_reversed[i], data[NUM_MODULES - 1 - i], 8);
   }
-  
+
+  memcpy(tx_data,command_bytes,4);
+
+  // calculate PEC for the data, and copy N times
+  for(int i=0;i<NUM_MODULES;i++){
+    preprocess_data(data_reversed[i],8);
+    memcpy(tx_data+4+(i*8),data_reversed[i],8);
+  }
   isospi_tx(tx_data, 4+total_data_length, NULL, true);
 }
 
 // Read a single register across all devices
-void ADBMSBroadcastRead(uint16_t command, uint8_t* data, uint8_t num_devices){
+void ADBMSBroadcastRead(uint16_t command, uint8_t data[NUM_MODULES][6]){
   // The recieved data is in the format (Data[6], PEC[2]) repeating for all chips in the chain.
   uint8_t tx_data[4] = {0};
-
   preprocess_command(command, &tx_data[0],&tx_data[2]);
-
-  pec_t pecValid = PEC_VALID;
+  uint8_t rxData[NUM_MODULES*8];
   // recieve data, and check PEC for every block of data
-  do {
-
-    isospi_tx_rx(tx_data,4,data,8*num_devices,NULL);
-
-    for(int i=0; i<num_devices; i++){
-      if (pecValid == PEC_VALID){
-        // keep going if valid, stop and retry if any invalid PEC
-        pecValid = verifyRx(data+(i*8));
-      }
+  isospi_tx_rx(tx_data,4,rxData,8*NUM_MODULES,NULL);
+  // keep going if valid, stop and retry if any invalid PEC
+  pec_t pecValid = PEC_VALID;
+  for(int i=0; i<NUM_MODULES; i++){
+    pecValid = verifyRx(rxData+(i*8));
+    if (pecValid == PEC_INVALID){
+      ESP_LOGE(TAG, "PEC Check failed on command %d, register bytes:", command);
+      ADBMSPrintRegister(rxData+(i*8));
     }
-  } while(pecValid == PEC_INVALID);
+  }
+  //discard PEC
+  for(int i=0; i<NUM_MODULES; i++){
+    memcpy(data[i],rxData+(i*8),6);
+  }
 }
 
 // Write Command with no write data - Unaffected by module count
@@ -222,41 +204,40 @@ void ADBMSCommand(uint16_t command){
 
 // higher level abstraction functions
 
-void ADBMSConfigureBMS(BMSConfig_t* newconfig, uint8_t num_modules){
-  for (int i = 0; i < num_modules; i++) {
-    uint8_t regA_data[8] = {
-      (uint8_t)(newconfig[i].refon<<7 | newconfig[i].cth),
-      (uint8_t)(newconfig[i].flag_d),
-      (uint8_t)((newconfig[i].soakon << 7 ) | (newconfig[i].owrng << 6) | (newconfig[i].owa << 5)),
-      (uint8_t)(newconfig[i].gpo & 0xFF),
-      (uint8_t)(newconfig[i].gpo >> 8),
-      (uint8_t)(newconfig[i].snap_st << 5 | newconfig[i].mute_st << 4 | newconfig[i].comm_bk << 3 | newconfig[i].fc),
-      0,
-      0
-    };
-    uint8_t regB_data[8] = {
-      (uint8_t)(newconfig[i].vuv & 0xFF),
-      (uint8_t)(newconfig[i].vuv >> 8 | ((newconfig[i].vov << 4) & 0xF0)),
-      (uint8_t)(newconfig[i].vov >> 4),
-      (uint8_t)(newconfig[i].dtmen << 7 | newconfig[i].dtrng << 6 | newconfig[i].dcto),
-      (uint8_t)(newconfig[i].dcc & 0xFF),
-      (uint8_t)(newconfig[i].dcc >> 8),
-      0,
-      0
-    };
-    ADBMSBroadcastWrite(WRCFGA,regA_data,8,NUM_MODULES);
-    ADBMSBroadcastWrite(WRCFGB,regB_data,8,NUM_MODULES);
+void ADBMSSetBMSConfig(BMSConfig_t newconfig[NUM_MODULES]){
+  uint8_t regA_data[NUM_MODULES][8];
+  uint8_t regB_data[NUM_MODULES][8];
+  uint8_t temp[8] = {0};
+  for (int i = 0; i < NUM_MODULES; i++) {
+    temp[0] = (uint8_t)(newconfig[i].refon<<7 | newconfig[i].cth);
+    temp[1] = (uint8_t)(newconfig[i].flag_d);
+    temp[2] = (uint8_t)((newconfig[i].soakon << 7 ) | (newconfig[i].owrng << 6) | (newconfig[i].owa << 5));
+    temp[3] = (uint8_t)(newconfig[i].gpo & 0xFF);
+    temp[4] = (uint8_t)(newconfig[i].gpo >> 8);
+    temp[5] = (uint8_t)(newconfig[i].snap_st << 5 | newconfig[i].mute_st << 4 | newconfig[i].comm_bk << 3 | newconfig[i].fc);
+    memcpy(regA_data[i],temp,8*sizeof(uint8_t));
   }
-}
+  for (int i = 0; i < NUM_MODULES; i++) {
+    temp[0] = (uint8_t)(newconfig[i].vuv & 0xFF);
+    temp[1] = (uint8_t)(newconfig[i].vuv >> 8 | ((newconfig[i].vov << 4) & 0xF0));
+    temp[2] = (uint8_t)(newconfig[i].vov >> 4);
+    temp[3] = (uint8_t)(newconfig[i].dtmen << 7 | newconfig[i].dtrng << 6 | newconfig[i].dcto);
+    temp[4] = (uint8_t)(newconfig[i].dcc & 0xFF);
+    temp[5] = (uint8_t)(newconfig[i].dcc >> 8);
+    memcpy(regB_data[i],temp,8*sizeof(uint8_t));
+    }
+    ADBMSBroadcastWrite(WRCFGA,regA_data);
+    ADBMSBroadcastWrite(WRCFGB,regB_data);
+  }
 
-void ADBMSGetBMSConfig(BMSConfig_t* config, uint8_t num_modules){
-  uint8_t regA_data[num_modules][8];
-  uint8_t regB_data[num_modules][8];
+void ADBMSGetBMSConfig(BMSConfig_t config[NUM_MODULES]){
+  uint8_t regA_data[NUM_MODULES][6];
+  uint8_t regB_data[NUM_MODULES][6];
 
-  ADBMSReadMulti(RDCFGA,regA_data,num_modules);
-  ADBMSReadMulti(RDCFGB,regB_data,num_modules);
-
-  for (int i = 0; i < num_modules; i++) {
+  ADBMSBroadcastRead(RDCFGA,regA_data);
+  ADBMSBroadcastRead(RDCFGB,regB_data);
+  //kind of annoying, need to do it all in one line because it's a macro
+  for (int i = 0; i < NUM_MODULES; i++) {
     config[i].refon =    (unsigned int)(regA_data[i][0] >> 7);
     config[i].cth =      (unsigned int)(regA_data[i][0] & 0x7);
     config[i].flag_d =   (unsigned int)(regA_data[i][1]);
@@ -275,106 +256,128 @@ void ADBMSGetBMSConfig(BMSConfig_t* config, uint8_t num_modules){
     config[i].dcto =     (unsigned int)(regB_data[i][3] & 0x3F);
     config[i].dcc =      (unsigned int)(regB_data[i][5]<<8 | regB_data[i][4]);
   }
-
-  //kind of annoying, need to do it all in one line because it's a macro
-  for(int i = 0; i < num_modules; i++){
+  for(int i = 0; i < NUM_MODULES; i++){
     ESP_LOGI(TAG,"BMS Config:\n->REFON: %d\n->CTH: %X\n->FLAG_D: %x\n->SOAKON: %d\n->OWRNG: %d\n->OWA: %X\n->GPO: %X\n->SNAP_ST: %d\n->MUTE_ST: %d\n->COMM_BK: %d\n->FC: %d\n->VUV: %X | %.4f\n->VOV: %X | %.4f\n->DTMEN: %d\n->DTRNG: %d\n->DCTO %d minutes\n->DCC: %X" ,config[i].refon,config[i].cth,config[i].flag_d,config[i].soakon, config[i].owrng, config[i].owa, config[i].gpo, config[i].snap_st, config[i].mute_st, config[i].comm_bk, config[i].fc,config[i].vuv, (float)((config[i].vuv*16*0.00015)+1.5),config[i].vov,(float)((config[i].vov*16*0.00015f)+1.5),config[i].dtmen,config[i].dtrng,config[i].dtrng ? config[i].dcto*16 : config[i].dcto*1, config[i].dcc);
   }
-  return config;
 }
 
 // Read chain of Serial IDs
 
-void ADBMSReadSerialIDs(void){
-  uint8_t num_modules = NUM_MODULES;
+pec_t ADBMSReadSerialIDs(){
   // tx RDSID
   uint8_t tx_data[4] = {0};
   preprocess_command(RDSID, &tx_data[0],&tx_data[2]);
   // The recieved data is in the format (Data[6], PEC[2]) repeating for all chips in the chain.
   // create a temporary buffer to store all the data
-  size_t rxDataLength = num_modules*(6+2);
-  uint8_t rxData[rxDataLength];
+  size_t rxDataLength = NUM_MODULES*8;
+  uint8_t rxData[NUM_MODULES*8];
 
-  pec_t pecValid = PEC_VALID;
   // recieve data, and check PEC for every block of data
-  do {
-    isospi_tx_rx(tx_data,4,rxData,rxDataLength,NULL);
+  isospi_tx_rx(tx_data,4,rxData,rxDataLength,NULL);
+  uint8_t pec_valid = PEC_VALID;
 
-    for(int i=0; i<num_modules; i++){
-      if (pecValid == PEC_VALID){
-        // keep going if valid, stop and retry if any invalid PEC
-        pecValid = verifyRx(rxData+(i*8));
-      }
+  for(int i=0; i<NUM_MODULES; i++){
+    if(verifyRx(rxData+(i*8)) == PEC_INVALID){
+      pec_valid = PEC_INVALID;
     }
-  } while(pecValid == PEC_INVALID);
+  }
+
   //log each serial ID
-  for(int i=0; i<num_modules; i++){
+  for(int i=0; i<NUM_MODULES; i++){
     ESP_LOGI(TAG,"Module %d Serial ID: %02X%02X%02X%02X%02X%02X",i+1,rxData[i*8],rxData[i*8+1],rxData[i*8+2],rxData[i*8+3],rxData[i*8+4],rxData[i*8+5]);
   }
+  return pec_valid;
 }
 
 // Read filtered cell voltages, assuming output float array is in format [module][cell]
-void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module){
-  // tx RDFCALL
-  uint8_t tx_data[4] = {0};
-  preprocess_command(RDFCALL, &tx_data[0],&tx_data[2]);
-  // The recieved data is in the format (Data[32], PEC[2]) repeating for all chips in the chain.
-  // create a temporary buffer to store all the data
-  size_t rxDataLength = num_modules*(32+2);
-  uint8_t rxData[rxDataLength];
-  
-  pec_t pecValid = PEC_VALID;
-  // recieve data, and check PEC for every block of data
-  do {
-    isospi_tx_rx(tx_data,4,rxData,rxDataLength,NULL);
+void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE]){
+  int16_t intVoltages[6][NUM_MODULES][3];
+  ADBMSBroadcastRead(RDFCA,(uint8_t(*)[6])intVoltages[0]);
+  ADBMSBroadcastRead(RDFCB,(uint8_t(*)[6])intVoltages[1]);
+  ADBMSBroadcastRead(RDFCC,(uint8_t(*)[6])intVoltages[2]);
+  ADBMSBroadcastRead(RDFCD,(uint8_t(*)[6])intVoltages[3]);
+  ADBMSBroadcastRead(RDFCE,(uint8_t(*)[6])intVoltages[4]);
+  ADBMSBroadcastRead(RDFCF,(uint8_t(*)[6])intVoltages[5]);
 
-    for(int i=0; i<num_modules; i++){
-      if (pecValid == PEC_VALID){
-        // keep going if valid, stop and retry if any invalid PEC
-        pecValid = verifyRx(rxData+(i*34));
+  // Each register contains 3 cell voltages, in order across the module.
+  for (int reg = 0; reg < 6; reg++) {
+    for (int module = 0; module < NUM_MODULES; module++) {
+      for (int cell = 0; cell < 3; cell++) {
+        int cellIndex = (reg * 3) + cell;
+        if (cellIndex < CELLS_PER_MODULE) {
+          cellVoltages[module][cellIndex] = REG_TO_V(intVoltages[reg][module][cell]);
+        }
       }
     }
-  } while(pecValid == PEC_INVALID);
-  //post-process data by casting to struct, converting, and writing to output
-  ADBMS_AllVoltageRegister_t intVoltages[num_modules];
-  memcpy(intVoltages,rxData,sizeof(ADBMS_AllVoltageRegister_t)*num_modules);
-  for(int i=0; i<num_modules; i++){
-      for(int j=0; j<cells_per_module; j++){
-        cellVoltages[i][j] = REG_TO_V(intVoltages[i].voltage[j]);
+  }
+}
+// Read unfiltered cell voltages, assuming output float array is in format [module][cell]
+void ADBMSReadVoltages(float cellVoltages[][CELLS_PER_MODULE]){
+  int16_t intVoltages[6][NUM_MODULES][3];
+  ADBMSBroadcastRead(RDCVA,(uint8_t(*)[6])intVoltages[0]);
+  ADBMSBroadcastRead(RDCVB,(uint8_t(*)[6])intVoltages[1]);
+  ADBMSBroadcastRead(RDCVC,(uint8_t(*)[6])intVoltages[2]);
+  ADBMSBroadcastRead(RDCVD,(uint8_t(*)[6])intVoltages[3]);
+  ADBMSBroadcastRead(RDCVE,(uint8_t(*)[6])intVoltages[4]);
+  ADBMSBroadcastRead(RDCVF,(uint8_t(*)[6])intVoltages[5]);
+
+  // Each register contains 3 cell voltages, in order across the module.
+  for (int reg = 0; reg < 6; reg++) {
+    for (int module = 0; module < NUM_MODULES; module++) {
+      for (int cell = 0; cell < 3; cell++) {
+        int cellIndex = (reg * 3) + cell;
+        if (cellIndex < CELLS_PER_MODULE) {
+          cellVoltages[module][cellIndex] = REG_TO_V(intVoltages[reg][module][cell]);
+        }
+      }
     }
   }
 }
 
-// Read all averaged cell voltages
-void ADBMSReadAverageVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module){
-  // tx RDFCALL
-  uint8_t tx_data[4] = {0};
-  preprocess_command(RDACALL, &tx_data[0],&tx_data[2]);
-  // The recieved data is in the format (Data[32], PEC[2]) repeating for all chips in the chain.
-  // create a temporary buffer to store all the data
-  size_t rxDataLength = num_modules*(32+2);
-  uint8_t rxData[rxDataLength];
-
-  pec_t pecValid = PEC_VALID;
-  // recieve data, and check PEC for every block of data
-  do {
-    isospi_tx_rx(tx_data,4,rxData,rxDataLength,NULL);
-
-    for(int i=0; i<num_modules; i++){
-      if (pecValid == PEC_VALID){
-        // keep going if valid, stop and retry if any invalid PEC
-        pecValid = verifyRx(rxData+(i*34));
+void ADBMSReadAux(float temps[NUM_MODULES][THERMISTORS_PER_MODULE], float VMV[NUM_MODULES],float VPV[NUM_MODULES]){
+  int16_t intRegs[4][NUM_MODULES][3]; // Register group, module, result
+  ADBMSBroadcastRead(RDAUXA,(uint8_t(*)[6])intRegs[0]);
+  if(THERMISTORS_PER_MODULE>3){
+  ADBMSBroadcastRead(RDAUXB,(uint8_t(*)[6])intRegs[1]);
+  }
+  if(THERMISTORS_PER_MODULE>6){
+  ADBMSBroadcastRead(RDAUXC,(uint8_t(*)[6])intRegs[2]);
+  }
+  ADBMSBroadcastRead(RDAUXD,(uint8_t(*)[6])intRegs[3]);
+  // each register contains 3 values. Read thermistors until THERMISTORS_PER_MODULE, then jump to VMV and VPV
+  for (int reg = 0; reg < 4; reg++) {
+    for (int module = 0; module < NUM_MODULES; module++) {
+      for (int temp = 0; temp < 3; temp++) {
+        int tempIndex = (reg * 3) + temp;
+        if (tempIndex < THERMISTORS_PER_MODULE) {
+          temps[module][tempIndex] = V_TO_DEGC(REG_TO_V(intRegs[reg][module][temp]));
+        }
       }
     }
-  } while(pecValid == PEC_INVALID);
-  //post-process data by casting to struct, converting, and writing to output
-  ADBMS_AllVoltageRegister_t intVoltages[num_modules];
-  memcpy(intVoltages,rxData,sizeof(ADBMS_AllVoltageRegister_t)*num_modules);
-  for(int i=0; i<num_modules; i++){
-      for(int j=0; j<cells_per_module; j++){
-        cellVoltages[i][j] = REG_TO_V(intVoltages[i].voltage[j]);
-    }
   }
+  // read VPV and VMV
+  for(int module = 0; module < NUM_MODULES; module++){
+    VMV[module] = REG_TO_V(intRegs[3][module][1]);
+    VPV[module] = REG_TO_V_VPV(intRegs[3][module][2]);
+  }
+
+}
+
+void ADBMSReadStat(ADBMS_Status_t* status){
+  uint16_t reg[NUM_MODULES][3];
+  ADBMSBroadcastRead(RDSTATA,(uint8_t(*)[6])reg);
+  for(int module = 0; module<NUM_MODULES;module++){
+    status->vref2[module] = REG_TO_V(reg[module][0]);
+    status->itmp[module] = REG_TO_ITMP(reg[module][1]);
+  }
+  ADBMSBroadcastRead(RDSTATB,(uint8_t(*)[6])reg);
+  for(int module = 0; module<NUM_MODULES;module++){
+    status->vd[module]   = REG_TO_V(reg[module][0]);
+    status->va[module]   = REG_TO_V(reg[module][1]);
+    status->vres[module] = REG_TO_V(reg[module][2]);
+  }
+  ADBMSBroadcastRead(RDSTATC(0),(uint8_t(*)[6])status->C);
+  ADBMSBroadcastRead(RDSTATD,(uint8_t(*)[6])status->D);
 }
 
 //Debug functions
@@ -461,4 +464,12 @@ void ADBMSSerialRegisterDump(void){
       (i + 1 < NUM_REGS) ? "," : "");
   }
   printf("}\n");
+}
+
+void ADBMSPrintRegister(uint8_t reg[6]){
+  printf("[");
+  for( int i = 0; i<6;i++){
+    printf(" %X ",reg[i]);
+  }
+  printf("]\n");
 }

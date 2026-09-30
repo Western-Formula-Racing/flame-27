@@ -78,9 +78,8 @@ typedef struct{
   unsigned int dcc      : 16;
 } BMSConfig_t;
 
-// Register group helper structs
 
-// Register group C
+// Status group C
 typedef struct{
   uint16_t CSxFLT; // conversion mismatch fault per-cell
   uint16_t CTS;
@@ -100,20 +99,50 @@ typedef struct{
   uint8_t COMP : 1;     // Comparison between S-C is active
   uint8_t VDE : 1;      // Supply rail delta
   uint8_t VDEL : 1;     // Supply rail delta latent
-  uint16_t PEC;         // placeholder for PEC data
 } ADBMS_StatusGroupC_t;
 
 typedef struct{
   uint32_t UVOV;    // UV/OV for each cell, alternating in that order
   uint8_t spare;
   uint8_t OC_CNTR;  // oscillator check counter, should be between 52-71
-  uint16_t PEC;
 } ADBMS_StatusGroupD_t;
 
+typedef struct {
+  float vref2[NUM_MODULES];
+  float itmp[NUM_MODULES];
+  float vd[NUM_MODULES];
+  float va[NUM_MODULES];
+  float vres[NUM_MODULES];
+  ADBMS_StatusGroupC_t C[NUM_MODULES];
+  ADBMS_StatusGroupD_t D[NUM_MODULES];
+} ADBMS_Status_t;
+
+// PWM Register Groups
+
 typedef struct{
-  int16_t voltage[16];
+  uint8_t PWM1 : 4;
+  uint8_t PWM2 : 4;
+  uint8_t PWM3 : 4;
+  uint8_t PWM4 : 4;
+  uint8_t PWM5 : 4;
+  uint8_t PWM6 : 4;
+  uint8_t PWM7 : 4;
+  uint8_t PWM8 : 4;
+  uint8_t PWM9 : 4;
+  uint8_t PWM10 : 4;
+  uint8_t PWM11 : 4;
+  uint8_t PWM12 : 4;
   uint16_t PEC;
-} ADBMS_AllVoltageRegister_t;
+} ADBMS_PWMA_t;
+
+typedef struct{
+  uint8_t PWM13 : 4;
+  uint8_t PWM14 : 4;
+  uint8_t PWM15 : 4;
+  uint8_t PWM16 : 4;
+  uint32_t resvd;
+  uint16_t PEC;
+} ADBMS_PWMB_t;
 
 //CRC Processing functions
 //void preprocess_command(uint16_t command, uint8_t* command_bytes, uint8_t* PEC_bytes);
@@ -124,18 +153,21 @@ typedef struct{
 
 // Direct Chip access functions
 void ADBMSRead(uint16_t command, uint8_t* data);
-void ADBMSReadMulti(uint16_t* command, uint8_t* data, int num_commands);
 void ADBMSWrite(uint16_t command, uint8_t* data, size_t data_length);
-void ADBMSBroadcastWrite(uint16_t command, uint8_t* data, size_t data_length, uint8_t num_devices);
-void ADBMSBroadcastRead(uint16_t command, uint8_t* data, uint8_t num_devices);
+void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]);
+void ADBMSBroadcastRead(uint16_t command, uint8_t data[NUM_MODULES][6]);
 void ADBMSCommand(uint16_t command);
 
 // higher level abstraction functions
-void configureBMS(BMSConfig_t newconfig);
-void ADBMSGetBMSConfig(BMSConfig_t *config, uint8_t num_modules);
-void ADBMSReadSerialIDs(void);
-void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
-void ADBMSReadAverageVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
+void ADBMSSetBMSConfig(BMSConfig_t newconfig[NUM_MODULES]);
+void ADBMSGetBMSConfig(BMSConfig_t config[NUM_MODULES]);
+pec_t ADBMSReadSerialIDs();
+void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE]);
+void ADBMSReadVoltages(float cellVoltages[][CELLS_PER_MODULE]);
+void ADBMSReadAux(float ADCResults[NUM_MODULES][THERMISTORS_PER_MODULE], float VMV[NUM_MODULES],float VPV[NUM_MODULES]);
+void ADBMSReadStat(ADBMS_Status_t* status);
+//void ADBMSReadAverageVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
 
 // debug functions
 void ADBMSSerialRegisterDump();
+void ADBMSPrintRegister(uint8_t reg[6]);
