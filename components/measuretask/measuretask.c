@@ -5,7 +5,7 @@
 #include "esp_log.h"
 #include "statetask.h"
 
-static const char* TAG = "measuretask"; 
+//static const char* TAG = "measuretask";
 TickType_t elapsed;
 static Data_t Data;
 

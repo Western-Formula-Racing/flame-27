@@ -16,7 +16,6 @@ def git(*args):
     """Run a git command and return stdout as raw bytes."""
     return subprocess.run(["git", *args], capture_output=True, check=True).stdout
 
-# Work from the repo root no matter where the script is called from
 script_dir = "."
 root = subprocess.run(
     ["git", "rev-parse", "--show-toplevel"],
