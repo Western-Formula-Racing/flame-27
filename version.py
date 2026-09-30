@@ -35,9 +35,9 @@ if (build / "build_id").exists:
     old_build_id = old_build_id.strip('\n')
     dest = archive / old_build_id
     dest.mkdir(parents=True, exist_ok=True)
-    if (build / "build.patch").exists:
+    if (build / "build.patch").exists():
         shutil.copy(build / "build.patch",dest / "build.patch")
-    if (build / "build_info.h").exists:
+    if (build / "build_info.h").exists():
         shutil.copy(build / "build_info.h",dest / "build_info.h")
 
 rev = git("rev-parse", "--short", "HEAD").decode().strip()
