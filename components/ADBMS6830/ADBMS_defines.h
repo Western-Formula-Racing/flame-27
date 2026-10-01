@@ -141,6 +141,6 @@
 // macros
 #define REG_TO_V(value) (((float)((int16_t)value) * 0.00015f) + 1.5f)
 #define REG_TO_V_VPV(value) (((float)((int16_t)value) * 0.00375f) + 37.5f)
-#define V_TO_UVOV(voltage) (int)(((float)voltage-1.5)/(16*0.00015f))
+#define V_TO_UVOV(voltage) (int)(((float)voltage-1.5)/(16.f*0.00015f))
 #define V_TO_DEGC(voltage) (voltage * 1) //convert from thermistor voltage to temp
 #define REG_TO_ITMP(itmp) (((float)itmp*0.02f) - 73.0f)

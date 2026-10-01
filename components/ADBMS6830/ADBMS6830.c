@@ -380,6 +380,17 @@ void ADBMSReadStat(ADBMS_Status_t* status){
   ADBMSBroadcastRead(RDSTATD,(uint8_t(*)[6])status->D);
 }
 
+void ADBMSClearAllFaults(){
+  uint8_t clearBuffer[NUM_MODULES][8];
+  for(int i=0;i<NUM_MODULES;i++){
+    for(int j=0;j<8;j++){
+      clearBuffer[i][j] = 0xFF;
+    }
+  }
+  ADBMSBroadcastWrite(CLOVUV,clearBuffer);
+  ADBMSBroadcastWrite(CLRFLAG,clearBuffer);
+}
+
 //Debug functions
 
 static const char* REG_NAMES[] = {

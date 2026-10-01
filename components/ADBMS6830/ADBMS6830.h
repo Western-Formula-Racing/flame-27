@@ -166,6 +166,7 @@ void ADBMSReadFilteredVoltages(float cellVoltages[][CELLS_PER_MODULE]);
 void ADBMSReadVoltages(float cellVoltages[][CELLS_PER_MODULE]);
 void ADBMSReadAux(float ADCResults[NUM_MODULES][THERMISTORS_PER_MODULE], float VMV[NUM_MODULES],float VPV[NUM_MODULES]);
 void ADBMSReadStat(ADBMS_Status_t* status);
+void ADBMSClearAllFaults();
 //void ADBMSReadAverageVoltages(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module);
 
 // debug functions

@@ -8,11 +8,18 @@
 //static const char* TAG = "measuretask";
 TickType_t elapsed;
 static Data_t Data;
+static error_t Errors;
 
 const Data_t* getMeasureData(void) {
     return &Data;
 }
+const error_t* getErrors(void) {
+    return &Errors;
+}
 
+void clearAllErrors(){
+  memset(&Errors,0,sizeof(error_t));
+}
 void measureTask (void *pvParameters){
   TickType_t last_wake = xTaskGetTickCount();
   uint8_t cyclesSinceFTTI = 0;
@@ -86,7 +93,10 @@ void measureTask (void *pvParameters){
       // overtemp/open thermistor check
       // max cell delta check (only when idle)
       // manual OV/UV check
-
+    // get ADBMS errors, then clear flags
+    errorCheck(&Errors, Data);
+    ADBMSClearAllFaults();
+    // once every FTTI
     // reset WDT
     esp_task_wdt_reset();
 
@@ -101,8 +111,8 @@ void measureTask (void *pvParameters){
       }
     }
 
-    // 50ms nominal period
-    const TickType_t period = pdMS_TO_TICKS(50);
+    // 10ms nominal period
+    const TickType_t period = pdMS_TO_TICKS(10);
     vTaskDelayUntil(&last_wake, period);
   }
 }
@@ -139,6 +149,32 @@ float updateBalanceTargets(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_m
     }
 
     return min_voltage;
+}
+
+void errorCheck(error_t* errors, Data_t data){
+  // go through all possible errors, trigger the right flags, add relevant info to the "description"
+  uint8_t isError;
+  uint32_t uvov;
+  // ADBMS_UV
+  for(int i=0; i<NUM_MODULES; i++){
+    uvov = Data.ADBMS_STAT.D[i].UVOV;
+    //process bit by bit, and trigger flag if bad
+    for(int j=0; j<CELLS_PER_MODULE*2; j++){
+      isError = (uvov & 1);
+      uvov = uvov >> 1;
+      if (j%2==0){ // if even, UV
+        errors->flags |= isError << ERR_ADBMS_UV;
+        errors->ADBMS_uvCell[i][j/2] |= isError;
+      } else{ // if odd, OV
+        errors->flags |= isError << ERR_ADBMS_OV;
+        errors->ADBMS_ovCell[i][j/2] |= isError;
+      }
+    }
+    for(int j=0; j<CELLS_PER_MODULE; j++){
+    //check csflt as well
+      errors->ADBMS_csFltCell[i][j] |= ((data.ADBMS_STAT.C[i].CSxFLT & (1<<i))>>i);
+    }
+  }
 }
 
 void startMeasureTask(){

@@ -51,12 +51,12 @@ void app_main() {
     ADBMSConfig[i].owrng = 0;               //short soak time range
     ADBMSConfig[i].owa = 0;                 // open wire soak time, default 32us, can set up to 500ms
     ADBMSConfig[i].gpo = 1;                 // GPIO pull downs off
-    ADBMSConfig[i].fc = IIR_FILTER_1_25HZ;  // IIR Filter parameter
+    ADBMSConfig[i].fc = IIR_FILTER_0_625HZ;  // IIR Filter parameter
     ADBMSConfig[i].comm_bk = 0;             // if set to 1, disables communication propagation to further chips
     ADBMSConfig[i].mute_st = 1;             //if set to 1, disables discharging
     ADBMSConfig[i].snap_st = 0;             //if set to 1, activates snapshot and freezes all results registers
     ADBMSConfig[i].vuv = V_TO_UVOV(2.7) & 0xFFF;
-    ADBMSConfig[i].vov = V_TO_UVOV(4.2) & 0xFFF;
+    ADBMSConfig[i].vov = V_TO_UVOV(4.0) & 0xFFF;
     ADBMSConfig[i].dtmen = 1;               // enable discharge timer monitor
     ADBMSConfig[i].dtrng = 1;               // set range for discharge timer (1= 16 minute increments, 0= 1 minute increments)
     ADBMSConfig[i].dcto = 8 & 0x3F;         // set for 2 hours
@@ -71,6 +71,7 @@ void app_main() {
 
   while (1) {
     ESP_LOGI(TAG,"heartbeat");
+    clearAllErrors();
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
