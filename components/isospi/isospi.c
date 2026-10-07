@@ -5,14 +5,14 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 
-static const char* TAG = "isospi"; 
+static const char* TAG = "isospi";
 
 spi_device_handle_t spi_cs1, spi_cs2;
 
 void SPI_Setup(){
   esp_err_t err;
   esp_log_level_set(TAG,ESP_LOG_INFO);
-  spi_bus_config_t bus_conf = { 
+  spi_bus_config_t bus_conf = {
     .mosi_io_num = MOSI_NUM,
     .miso_io_num = MISO_NUM,
     .sclk_io_num = SPICLK_NUM,
@@ -32,7 +32,7 @@ void SPI_Setup(){
   if (err != ESP_OK) ESP_LOGE (TAG, "Failed to Initialise SPI");
 
   spi_device_interface_config_t devcfg_cs1 = { 
-    .mode = 3,
+    .mode = 1,
     .clock_speed_hz = 1 * 1000 * 1000, // 1MHz
     .spics_io_num = ISOSPI_CS,
     .flags = 0,

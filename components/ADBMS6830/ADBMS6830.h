@@ -152,8 +152,6 @@ typedef struct{
 //pec_t verifyRx(uint8_t *rxData);
 
 // Direct Chip access functions
-void ADBMSRead(uint16_t command, uint8_t* data);
-void ADBMSWrite(uint16_t command, uint8_t* data, size_t data_length);
 void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]);
 void ADBMSBroadcastRead(uint16_t command, uint8_t data[NUM_MODULES][6]);
 void ADBMSCommand(uint16_t command);

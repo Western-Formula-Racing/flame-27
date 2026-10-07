@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include "gpio.h"
 #include "ADBMS6830.h"
 
 typedef struct{
@@ -11,25 +12,21 @@ typedef struct{
   ADBMS_Status_t ADBMS_STAT;
 
   //Balancing Data
+  float maxCellVoltage[NUM_MODULES];
+  float minCellVoltage[NUM_MODULES];
   uint8_t dccMask[NUM_MODULES][CELLS_PER_MODULE]; // Discharge control mask, 1 = discharge, 0 = no discharge
   float balanceMaxCellDelta; // Max delta during paused balacing, used to determine if balancing is complete
   float balanceTargetVoltage; // Target voltage for balancing, for diagnotics only
-  // Relays
-  //uint8_t IMDRelay : 1;
-  //uint8_t AMSRelay : 1;
-  //uint8_t BSPDRelay : 1;
-  //uint8_t LatchRelay : 1;
-  //uint8_t AIRNRelay : 1;
-  //uint8_t HVActiveRelay : 1;
-  //// GPIO Outputs
-  //uint8_t AMSOK : 1;
-  //uint8_t PRECHOK : 1;
-  //uint8_t RTML : 1;
-  //uint8_t TSSI_RED : 1;
-  //// GPIO Inputs
-  //uint8_t ExpanderInt : 1;
-
+  // all GPIOs
+  bool gpioStates[GPIO_MAX];
 } Data_t;
+
+typedef enum {
+  OW_IDLE = 0,
+  OW_START_ODD,
+  OW_START_EVEN,
+  OW_RESTORE_CONT,
+} owState_e;
 
 typedef enum {
   // "loud" errors, throw fault
@@ -57,22 +54,19 @@ typedef enum {
 
 typedef struct{
   uint32_t flags;
-  uint8_t ADBMS_uvCell[NUM_MODULES][CELLS_PER_MODULE];
-  uint8_t ADBMS_ovCell[NUM_MODULES][CELLS_PER_MODULE];
-  uint8_t ADBMS_csFltCell[NUM_MODULES][CELLS_PER_MODULE];
-  uint8_t uvCell[NUM_MODULES][CELLS_PER_MODULE];
-  uint8_t ovCell[NUM_MODULES][CELLS_PER_MODULE];
+  uint16_t ADBMS_uvCellMask[NUM_MODULES]; // mask that stores errored UV cell state
+  uint16_t ADBMS_ovCellMask[NUM_MODULES]; // mask that stores errored OV cell state
+  uint8_t ADBMS_csFltMask[NUM_MODULES];   // mask that stores errored ADC mismatch Cells (open-wire indicator)
+  uint8_t overvoltCellMask[NUM_MODULES];
+  uint8_t undervoltCellMask[NUM_MODULES];
   float moduleDelta[NUM_MODULES];
   float packDelta;
 } error_t;
 
-void measureTask (void *pvParameters);
-//float getMaxCellVoltageDelta(float cellVoltages[][CELLS_PER_MODULE]);
-float updateBalanceTargets(float cellVoltages[][CELLS_PER_MODULE], uint8_t num_modules, uint8_t cells_per_module, uint8_t dccMask[][CELLS_PER_MODULE], float threshold_v);
+void coreTask (void *pvParameters);
 void errorCheck(error_t* errors, Data_t data);
-void startMeasureTask();
+void startCoreTask();
 
-TickType_t getElasped();
-const Data_t* getMeasureData(void);
+bool copyMeasureData(Data_t* out_data, TickType_t wait_ticks);
 const error_t* getErrors(void);
 void clearAllErrors();

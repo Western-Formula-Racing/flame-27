@@ -8,10 +8,14 @@
 #include "esp_log.h"
 
 #include "logger.h"
-#include "measuretask.h"
+#include "coretask.h"
 #include "config.h"
 
 static const char* TAG = "logger";
+
+void sendSDCard(const Data_t* data){
+  
+}
 
 void sendTeleplot(const Data_t* data, const error_t* errors){
   // format all data in a big block then send it all at once
@@ -61,36 +65,7 @@ void sendTeleplot(const Data_t* data, const error_t* errors){
   }
   offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "|t,np\n");
   // errors
-  //OV Flags
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, ">OV Flags: ");
-  for(int k = 0; k < NUM_MODULES; k++){
-    for (int l = 0; l<CELLS_PER_MODULE;l++){
-      if(errors->ADBMS_ovCell[k][l] == 1){
-        offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "c[%d,%d] ",k,l);
-      }
-    }
-  }
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "|t,np\n");
-  //UV Flags
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, ">UV Flags: ");
-  for(int k = 0; k < NUM_MODULES; k++){
-    for (int l = 0; l<CELLS_PER_MODULE;l++){
-      if(errors->ADBMS_uvCell[k][l] == 1){
-        offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "c[%d,%d] ",k,l);
-      }
-    }
-  }
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "|t,np\n");
-  //CSFLT Flags
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, ">CSFLT Flags: ");
-  for(int k = 0; k < NUM_MODULES; k++){
-    for (int l = 0; l<CELLS_PER_MODULE;l++){
-      if(errors->ADBMS_csFltCell[k][l] == 1){
-        offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "c[%d,%d] ",k,l);
-      }
-    }
-  offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "|t,np\n");
-  }
+
   if (offset > 0 && offset < sizeof(json_buf)) {
     usb_serial_jtag_write_bytes(json_buf, offset, pdMS_TO_TICKS(10));
   } else{
@@ -109,14 +84,14 @@ void logTask(void *pvParameters){
   char stats_buf[512];
   uint8_t logCounter = 0;
   TickType_t last_wake = xTaskGetTickCount();
-
+  Data_t loggerData;
   while(true){
     logCounter++;
     if(logCounter % 10 == 0){
       // Every 100ms
-      const Data_t* data = getMeasureData();
+      copyMeasureData(&loggerData,pdMS_TO_TICKS(10));
       const error_t* errors = getErrors();
-      sendTeleplot(data, errors);
+      sendTeleplot(&loggerData, errors);
     }
     if(logCounter % 100 == 0){
       // Every 1s
@@ -134,7 +109,7 @@ void startLoggerTask(){
     "loggerTask",
     4096,
     NULL,
-    PRIO_LOG,
+    PRIO_LOGTASK,
     NULL,
     0
   );

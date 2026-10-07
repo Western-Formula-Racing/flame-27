@@ -4,6 +4,17 @@
 
 static const char *TAG = "ADBMS6830";
 
+// hold # of failed CRC checks
+uint32_t PECErrorCount = 0;
+// Reset PEC Error count
+void resetPECErrorCount(){
+  PECErrorCount = 0;
+}
+// Get number of failed PEC reads
+// @return uint32_t PECErrorCount
+uint32_t getPECErrorCount(){
+  return PECErrorCount;
+}
 //CRC Processing functions
 
 // get the PEC for a command (2 bytes) - returns 2 byte PEC
@@ -99,56 +110,12 @@ pec_t verifyRx(uint8_t *rxData){
     return PEC_INVALID;
   }
 }
-// verify the PEC of a received data array. The PEC is expected to be at the end of a 32-byte block of data.
-// @param rxData pointer to the received data array
-// @return PEC_VALID if the PEC is valid, PEC_INVALID otherwise
-pec_t verifyRxAll(uint8_t *rxData){
-  // 32 data bytes, 2 PEC bytes
-  uint16_t calcPEC = getDataPEC(rxData,32,(rxData[32] & 0xFC)>>2);
-  uint16_t recvPEC = (((rxData[32]) << 8) | rxData[33]) & 0x3FF;
-  if(calcPEC == recvPEC){
-    return PEC_VALID;
-  }else{
-    ESP_LOGE(TAG,"INVALID PEC");
-    return PEC_INVALID;
-  }
-}
 
 // Direct Chip access functions
 
-void ADBMSRead(uint16_t command, uint8_t* data){
-  // The recieved data is in the format (Data[6], PEC[2]) repeating for all chips in the chain.
-  uint8_t tx_data[4] = {0};
-
-  preprocess_command(command, &tx_data[0],&tx_data[2]);
-
-  ESP_LOGD(TAG,"Read Command: [%X,%X,%X,%X]",tx_data[0],tx_data[1],tx_data[2],tx_data[3]);
-
-  isospi_tx_rx(tx_data,4,data,8,NULL);
-  verifyRx(data);
-
-  ESP_LOGD(TAG,"RX [%X,%X,%X,%X,%X,%X,%X,%X]",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
-}
-
-void ADBMSWrite(uint16_t command, uint8_t* data, size_t data_length){
-  uint8_t command_bytes[4] = {0};
-  preprocess_command(command,&command_bytes[0],&command_bytes[2]);
-  preprocess_data(data,data_length);
-  
-  //combine command + data into one array
-  uint8_t tx_data[4+data_length];
-  memcpy(tx_data,command_bytes,4);
-  memcpy(tx_data+4,data,data_length);
-  
-  isospi_tx(tx_data, 4+data_length, NULL, true);
-
-  ESP_LOGD(TAG,"Write: Command [%X,%X,%X,%X]",command_bytes[0],command_bytes[1],command_bytes[2],command_bytes[3]);
-  ESP_LOGD(TAG,"TX [%X,%X,%X,%X,%X,%X,%X,%X]",data[0],data[1],data[2],data[3],data[4],data[5],data[6],data[7]);
-}
-
 // Write a single register across all devices
 // @param command 16-bit command to write to all devices
-// @param data pointer to the data array to write. The array must be of shape NUM_MODULES x 8, with the last 2 bytes of each 8-byte block reserved for the PEC. The data must come in the order of the devices in the chain.
+// @param data[NUM_MODULES][8] pointer to the data array to write. The array must be of shape NUM_MODULES x 8, with the last 2 bytes of each 8-byte block reserved for the PEC. The data must come in the order of the devices in the chain.
 void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]){
   uint8_t command_bytes[4] = {0};
   preprocess_command(command,&command_bytes[0],&command_bytes[2]);
@@ -164,7 +131,7 @@ void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]){
 
   memcpy(tx_data,command_bytes,4);
 
-  // calculate PEC for the data, and copy N times
+  // calculate PEC for each data frame and write it into the TX data
   for(int i=0;i<NUM_MODULES;i++){
     preprocess_data(data_reversed[i],8);
     memcpy(tx_data+4+(i*8),data_reversed[i],8);
@@ -173,29 +140,40 @@ void ADBMSBroadcastWrite(uint16_t command, uint8_t data[NUM_MODULES][8]){
 }
 
 // Read a single register across all devices
+// @param command 16-bit command to write to all devices
+// @param data[NUM_MODULES][6] pointer to 2D array to write register data to.
 void ADBMSBroadcastRead(uint16_t command, uint8_t data[NUM_MODULES][6]){
   // The recieved data is in the format (Data[6], PEC[2]) repeating for all chips in the chain.
+  uint8_t attempts = 0;
   uint8_t tx_data[4] = {0};
-  preprocess_command(command, &tx_data[0],&tx_data[2]);
   uint8_t rxData[NUM_MODULES*8];
-  // recieve data, and check PEC for every block of data
+  // calculate command PEC for command bytes
+  preprocess_command(command, &tx_data[0],&tx_data[2]);
+  // recieve data
   isospi_tx_rx(tx_data,4,rxData,8*NUM_MODULES,NULL);
   // keep going if valid, stop and retry if any invalid PEC
-  pec_t pecValid = PEC_VALID;
   for(int i=0; i<NUM_MODULES; i++){
-    pecValid = verifyRx(rxData+(i*8));
-    if (pecValid == PEC_INVALID){
+    if (verifyRx(rxData+(i*8)) == PEC_INVALID && attempts < MAX_PEC_RETRY){
       ESP_LOGE(TAG, "PEC Check failed on command %d, register bytes:", command);
       ADBMSPrintRegister(rxData+(i*8));
+      isospi_tx_rx(tx_data,4,rxData,8*NUM_MODULES,NULL);
+      attempts++;
+      PECErrorCount++;
+      i = -1;
     }
   }
-  //discard PEC
+  // if >10 PEC attempts fail, discard data
+  if(attempts >= MAX_PEC_RETRY){
+    return;
+  }
+  // discard PEC and copy data to passed in pointer
   for(int i=0; i<NUM_MODULES; i++){
     memcpy(data[i],rxData+(i*8),6);
   }
 }
 
 // Write Command with no write data - Unaffected by module count
+// @param command 16-bit command to write to all devices
 void ADBMSCommand(uint16_t command){
   uint8_t command_bytes[4] = {0};
   preprocess_command(command, &command_bytes[0], &command_bytes[2]);
@@ -203,7 +181,8 @@ void ADBMSCommand(uint16_t command){
 }
 
 // higher level abstraction functions
-
+// Sets BMS config on all devices in the chain
+// @param newconfig[NUM_MODULES] array of BMS configs to write
 void ADBMSSetBMSConfig(BMSConfig_t newconfig[NUM_MODULES]){
   uint8_t regA_data[NUM_MODULES][8];
   uint8_t regB_data[NUM_MODULES][8];
@@ -229,7 +208,8 @@ void ADBMSSetBMSConfig(BMSConfig_t newconfig[NUM_MODULES]){
     ADBMSBroadcastWrite(WRCFGA,regA_data);
     ADBMSBroadcastWrite(WRCFGB,regB_data);
   }
-
+// Sets BMS config on all devices in the chain
+// @param newconfig[NUM_MODULES] array of BMS configs to put read data into
 void ADBMSGetBMSConfig(BMSConfig_t config[NUM_MODULES]){
   uint8_t regA_data[NUM_MODULES][6];
   uint8_t regB_data[NUM_MODULES][6];
@@ -381,14 +361,8 @@ void ADBMSReadStat(ADBMS_Status_t* status){
 }
 
 void ADBMSClearAllFaults(){
-  uint8_t clearBuffer[NUM_MODULES][8];
-  for(int i=0;i<NUM_MODULES;i++){
-    for(int j=0;j<8;j++){
-      clearBuffer[i][j] = 0xFF;
-    }
-  }
-  ADBMSBroadcastWrite(CLOVUV,clearBuffer);
-  ADBMSBroadcastWrite(CLRFLAG,clearBuffer);
+  ADBMSCommand(CLOVUV);
+  ADBMSCommand(CLRFLAG);
 }
 
 //Debug functions
@@ -409,73 +383,6 @@ static const char* REG_NAMES[] = {
 };
 
 #define NUM_REGS (sizeof(REG_NAMES) / sizeof(REG_NAMES[0]))
-
-void ADBMSSerialRegisterDump(void){
-  BMSRegisters_t regData;
-
-  ADBMSRead(RDSID,      &regData.SIDR[0]);
-  ADBMSRead(RDCFGA,     &regData.CFGAR[0]);
-  ADBMSRead(RDCFGB,     &regData.CFGBR[0]);
-  ADBMSRead(RDCVA,      &regData.CVAR[0]);
-  ADBMSRead(RDCVB,      &regData.CVBR[0]);
-  ADBMSRead(RDCVC,      &regData.CVCR[0]);
-  ADBMSRead(RDCVD,      &regData.CVDR[0]);
-  ADBMSRead(RDCVE,      &regData.CVER[0]);
-  ADBMSRead(RDCVF,      &regData.CVFR[0]);
-  ADBMSRead(RDACA,      &regData.ACVAR[0]);
-  ADBMSRead(RDACB,      &regData.ACVBR[0]);
-  ADBMSRead(RDACC,      &regData.ACVCR[0]);
-  ADBMSRead(RDACD,      &regData.ACVDR[0]);
-  ADBMSRead(RDACE,      &regData.ACVER[0]);
-  ADBMSRead(RDACF,      &regData.ACVFR[0]);
-  ADBMSRead(RDFCA,      &regData.FCVAR[0]);
-  ADBMSRead(RDFCB,      &regData.FCVBR[0]);
-  ADBMSRead(RDFCC,      &regData.FCVCR[0]);
-  ADBMSRead(RDFCD,      &regData.FCVDR[0]);
-  ADBMSRead(RDFCE,      &regData.FCVER[0]);
-  ADBMSRead(RDFCF,      &regData.FCVFR[0]);
-  ADBMSRead(RDSVA,      &regData.SVAR[0]);
-  ADBMSRead(RDSVB,      &regData.SVBR[0]);
-  ADBMSRead(RDSVC,      &regData.SVCR[0]);
-  ADBMSRead(RDSVD,      &regData.SVDR[0]);
-  ADBMSRead(RDSVE,      &regData.SVER[0]);
-  ADBMSRead(RDSVF,      &regData.SVFR[0]);
-  ADBMSRead(RDAUXA,     &regData.GPAR[0]);
-  ADBMSRead(RDAUXB,     &regData.GPBR[0]);
-  ADBMSRead(RDAUXC,     &regData.GPCR[0]);
-  ADBMSRead(RDAUXD,     &regData.GPDR[0]);
-  ADBMSRead(RDRAXA,     &regData.RGPAR[0]);
-  ADBMSRead(RDRAXB,     &regData.RGPBR[0]);
-  ADBMSRead(RDRAXC,     &regData.RGPCR[0]);
-  ADBMSRead(RDRAXD,     &regData.RGPDR[0]);
-  ADBMSRead(RDSTATA,    &regData.STAR[0]);
-  ADBMSRead(RDSTATB,    &regData.STBR[0]);
-  ADBMSRead(RDSTATC(0), &regData.STCR[0]);
-  ADBMSRead(RDSTATD,    &regData.STDR[0]);
-  ADBMSRead(RDSTATE,    &regData.STER[0]);
-  ADBMSRead(RDCOMM,     &regData.COMM[0]);
-  ADBMSRead(RDPWMA,     &regData.PWMR[0]);
-  ADBMSRead(RDPWMB,     &regData.PSR[0]);
-  ADBMSRead(RDCMCFG,    &regData.CMCF[0]);
-  ADBMSRead(RDCMCELLT,  &regData.CMTC[0]);
-  ADBMSRead(RDCMGPIOT,  &regData.CMTG[0]);
-  ADBMSRead(RDCMFLAG,   &regData.CMF[0]);
-  ADBMSRead(RDRR,       &regData.RRR[0]);
-
-  // BMSRegisters_t is 48 back-to-back uint8_t[6] members, in exactly the same
-  // order as REG_NAMES above, and uint8_t has no alignment padding — so we can
-  // walk regData as an array of 6-byte groups instead of a 288-arg printf.
-  const uint8_t (*regs)[6] = (const uint8_t (*)[6])&regData;
-
-  putchar('{');
-  for (size_t i = 0; i < NUM_REGS; i++) {
-    printf("\"%s\":[%u,%u,%u,%u,%u,%u]%s",
-      REG_NAMES[i],
-      regs[i][0], regs[i][1], regs[i][2], regs[i][3], regs[i][4], regs[i][5],
-      (i + 1 < NUM_REGS) ? "," : "");
-  }
-  printf("}\n");
-}
 
 void ADBMSPrintRegister(uint8_t reg[6]){
   printf("[");
