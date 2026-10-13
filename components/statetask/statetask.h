@@ -11,4 +11,5 @@ typedef enum {
 } state_e;
 
 void stateTask (void *pvParameters);
+void startStatetask();
 state_e getCurrentState();

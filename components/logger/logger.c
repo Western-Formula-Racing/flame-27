@@ -56,12 +56,7 @@ void sendTeleplot(const Data_t* data, const error_t* errors){
   // balance states
   offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, ">Cells Actively Balancing:");
   for(int i=0; i<NUM_MODULES; i++){
-    for(int j=0;j<CELLS_PER_MODULE;j++){
-      //add cell if balancing
-      if(data->dccMask[i][j]==1){
-        offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "c[%d,%d],",i,j);
-      }
-    }
+    offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "M[%d]:%X",i,data->dccMask[i]);
   }
   offset += snprintf(json_buf + offset, sizeof(json_buf) - offset, "|t,np\n");
   // errors

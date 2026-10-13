@@ -14,7 +14,7 @@ typedef struct{
   //Balancing Data
   float maxCellVoltage[NUM_MODULES];
   float minCellVoltage[NUM_MODULES];
-  uint8_t dccMask[NUM_MODULES][CELLS_PER_MODULE]; // Discharge control mask, 1 = discharge, 0 = no discharge
+  uint16_t dccMask[NUM_MODULES]; // Discharge control mask, 1 = discharge, 0 = no discharge
   float balanceMaxCellDelta; // Max delta during paused balacing, used to determine if balancing is complete
   float balanceTargetVoltage; // Target voltage for balancing, for diagnotics only
   // all GPIOs

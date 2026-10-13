@@ -24,7 +24,8 @@ void coreTask (void *pvParameters){
 
   TickType_t past_elapsed[5] = {0};
   uint8_t elapsed_idx = 0;
-
+  uint16_t dccMask[1] = {0x1};
+  ADBMSStartDischarge(dccMask);
   while(1){
     // Task Code
     cyclesSinceFTTI++;
@@ -154,8 +155,6 @@ void errorCheck(error_t* errors, Data_t data){
         errors->undervoltCellMask[i] |= (1 << i);
       }
     }
-
-
   }
 }
 
@@ -191,4 +190,8 @@ void startCoreTask(){
     NULL,
     1
   );
+}
+
+void dischargeCell(int cell, int pwm){
+
 }

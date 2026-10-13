@@ -39,3 +39,16 @@ void stateTask (void *pvParameters){
 state_e getCurrentState(){
   return currentState;
 }
+
+void startStateTask(){
+  // create data mutex before starting task
+  xTaskCreatePinnedToCore(
+    stateTask,
+    "stateTask",
+    4096,
+    NULL,
+    PRIO_CORETASK,
+    NULL,
+    1
+  );
+}

@@ -32,7 +32,7 @@ void SPI_Setup(){
   if (err != ESP_OK) ESP_LOGE (TAG, "Failed to Initialise SPI");
 
   spi_device_interface_config_t devcfg_cs1 = { 
-    .mode = 1,
+    .mode = 0,
     .clock_speed_hz = 1 * 1000 * 1000, // 1MHz
     .spics_io_num = ISOSPI_CS,
     .flags = 0,
@@ -61,7 +61,7 @@ void wake_tone(spi_device_handle_t dev){
       spi_device_polling_transmit (dev, &wake);
     }
 	}
-    esp_rom_delay_us (10);
+    esp_rom_delay_us (300);
 }
 
 void isospi_tx(uint8_t* txData, size_t txlength, spi_device_handle_t device, bool waketone){

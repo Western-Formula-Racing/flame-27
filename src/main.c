@@ -11,6 +11,7 @@
 #include "coretask.h"
 #include "statetask.h"
 #include "ADBMS6830.h"
+#include "LP5012.h"
 #include "gpio.h"
 #include "config.h"
 #include "logger.h"
@@ -54,7 +55,7 @@ static void mountSdCard(void) {
   }
 }
 
-#ifndef TEST_MODE
+
 void app_main() {
   vTaskDelay(pdMS_TO_TICKS(2000));
   ESP_LOGI(TAG, "FLAME-27 BMS Firmware Starting...");
@@ -62,80 +63,42 @@ void app_main() {
   esp_log_level_set("Main", ESP_LOG_DEBUG);
   esp_log_level_set("coretask", ESP_LOG_DEBUG);
   esp_log_level_set("ADBMS6830", ESP_LOG_DEBUG);
-
+  
   // Hardware Initialization
+  ESP_LOGI(TAG, "GPIO Setup...");
   GPIO_Setup();
+  setPinState(PIN_RED_LED,true);
+  ESP_LOGI(TAG, "SPI Setup...");
   SPI_Setup();
-  enterDriveModeIfRequested();
-  mountSdCard();
-
-  // Before continuing, keep trying to read serial IDs until no PEC errors are found
-  while(ADBMSReadSerialIDs() == PEC_INVALID){
-    vTaskDelay(pdMS_TO_TICKS(10));
-    ESP_LOGE(TAG,"Module Not found!");
-  }
-  ESP_LOGI(TAG,"Module Connection Verified!");
-
-  // configure all devices
-  BMSConfig_t ADBMSConfig[NUM_MODULES];
-  ADBMSGetBMSConfig(ADBMSConfig);
-  for(int i = 0; i< NUM_MODULES; i++){
-    ADBMSConfig[i].refon = 1;               // keep reference on after ADC conversions, uses more power but makes conversions faster
-    ADBMSConfig[i].cth = 0b001;             // Allowable drift between C- and S-ADCs (8.1mV default)
-    ADBMSConfig[i].soakon = 0;              // disable aux ADC soak time, test this to see if it makes an impact on thermistor readings
-    ADBMSConfig[i].owrng = 0;               //short soak time range
-    ADBMSConfig[i].owa = 0;                 // open wire soak time, default 32us, can set up to 500ms
-    ADBMSConfig[i].gpo = 1;                 // GPIO pull downs off
-    ADBMSConfig[i].fc = IIR_FILTER_5HZ;  // IIR Filter parameter
-    ADBMSConfig[i].comm_bk = 0;             // if set to 1, disables communication propagation to further chips
-    ADBMSConfig[i].mute_st = 1;             //if set to 1, disables discharging
-    ADBMSConfig[i].snap_st = 0;             //if set to 1, activates snapshot and freezes all results registers
-    ADBMSConfig[i].vuv = V_TO_UVOV(UNDERVOLT_THRESHOLD) & 0xFFF;
-    ADBMSConfig[i].vov = V_TO_UVOV(OVERVOLT_THRESHOLD) & 0xFFF;
-    ADBMSConfig[i].dtmen = 1;               // enable discharge timer monitor
-    ADBMSConfig[i].dtrng = 1;               // set range for discharge timer (1= 16 minute increments, 0= 1 minute increments)
-    ADBMSConfig[i].dcto = 8 & 0x3F;         // set for 2 hours
-    ADBMSConfig[i].dcc = 0;                 // balance switches
-  }
-  ADBMSSetBMSConfig(ADBMSConfig);
-
+  ESP_LOGI(TAG, "I2C Setup...");
+  setPinState(PIN_FAN_ENABLE,true);
+  I2C_Setup();
+  ESP_LOGI(TAG, "Init ADBMS");
+  // init all ADBMS Devices with default config
+  //ADBMSInit();
+  //enterDriveModeIfRequested();
+  //mountSdCard();
+  
   // start measurement task
-  startCoreTask();
+  //startCoreTask();
   // start State task
-
+  
   // start CAN TX task
-
+  
   //start logging task
-  startLoggerTask();
-
+  //startLoggerTask();
+  
+  ESP_LOGI(TAG, "Setup Complete!");
+  setPinState(PIN_RED_LED,false);
+  uint8_t fan_percent = 0;
   while (1) {
-    ESP_LOGI(TAG,"heartbeat");
-    setPinState(PIN_GREEN_LED,1);
-    clearAllErrors();
+    ESP_LOGI(TAG,"heartbeat.");
+    ESP_LOGI(TAG,"Fan Speed: %d",fan_percent);
+    setFanSpeed(1,fan_percent);
+    fan_percent += 25;
+    setPinState(PIN_GREEN_LED,true);
     vTaskDelay(pdMS_TO_TICKS(900));
-    setPinState(PIN_GREEN_LED,0);
+    setPinState(PIN_GREEN_LED,false);
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
-
-#endif
-
-#ifdef TEST_MODE
-void app_main() {
-  vTaskDelay(pdMS_TO_TICKS(2000));
-  ESP_LOGI(TAG, "FLAME-27 BMS Firmware Starting...");
-  ESP_LOGI(TAG, "Build-id: %s",BUILD_ID);
-  GPIO_Setup();
-  SPI_Setup();
-  enterDriveModeIfRequested();
-  mountSdCard();
-  filelog();
-  while (1) {
-    ESP_LOGI(TAG,"heartbeat");
-    setPinState(PIN_GREEN_LED,1);
-    vTaskDelay(pdMS_TO_TICKS(800));
-    setPinState(PIN_GREEN_LED,0);
-    vTaskDelay(pdMS_TO_TICKS(200));
-  }
-}
-#endif

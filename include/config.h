@@ -10,7 +10,7 @@
 #define MAX_PEC_RETRY 10
 
 #define NUM_MODULES 1
-#define CELLS_PER_MODULE 13
+#define CELLS_PER_MODULE 4
 #define THERMISTORS_PER_MODULE 10
 
 //pins
